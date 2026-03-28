@@ -1,0 +1,337 @@
+[
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "installmentNumber",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "nextDueUnix",
+        "type": "uint256"
+      }
+    ],
+    "name": "InstallmentRecorded",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ScheduleCancelled",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "debtTokenId",
+        "type": "uint256"
+      }
+    ],
+    "name": "ScheduleCompleted",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      },
+      {
+        "indexed": true,
+        "internalType": "uint256",
+        "name": "debtTokenId",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "totalInstallments",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "frequencySeconds",
+        "type": "uint256"
+      },
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "firstDueUnix",
+        "type": "uint256"
+      }
+    ],
+    "name": "ScheduleCreated",
+    "type": "event"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "cancelSchedule",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "debtTokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalAmountPaise",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalInstallments",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "frequencySeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "firstDueUnix",
+        "type": "uint256"
+      }
+    ],
+    "name": "createSchedule",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "getSchedule",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "uint256",
+            "name": "debtTokenId",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "totalAmountPaise",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "installmentPaise",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "frequencySeconds",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "nextDueUnix",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "paidInstallments",
+            "type": "uint256"
+          },
+          {
+            "internalType": "uint256",
+            "name": "totalInstallments",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "active",
+            "type": "bool"
+          },
+          {
+            "internalType": "address",
+            "name": "businessWallet",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct KhataFlowPayments.PaymentSchedule",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "isPaymentOverdue",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "scheduleId",
+        "type": "uint256"
+      }
+    ],
+    "name": "recordInstallment",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "schedules",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "debtTokenId",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalAmountPaise",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "installmentPaise",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "frequencySeconds",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "nextDueUnix",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "paidInstallments",
+        "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "totalInstallments",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "active",
+        "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "businessWallet",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "name": "tokenToSchedule",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "totalSchedules",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  }
+]
