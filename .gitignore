@@ -4,6 +4,14 @@
 .idea/
 .vscode/
 
+
+.env
+*/.env
+*.env
+/frontend/.env
+/backend/.env
+
+
 # Dependencies
 node_modules/
 /node_modules
