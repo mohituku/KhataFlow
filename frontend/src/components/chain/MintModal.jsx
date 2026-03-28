@@ -1,16 +1,38 @@
-import { useState } from 'react';
-import { X, Calendar, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
+import { Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { mockInvoices, formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/mockData';
 import { useMintNFT } from '../../hooks/useMintNFT';
+import { fetchJson, getBusinessId } from '../../lib/api';
 import { toast } from 'sonner';
 
-export const MintModal = ({ open, onClose }) => {
+export const MintModal = ({ open, onClose, onMinted }) => {
+  const [invoices, setInvoices] = useState([]);
   const [selectedInvoice, setSelectedInvoice] = useState('');
   const [dueDate, setDueDate] = useState('');
   const { mintNFT, isMinting } = useMintNFT();
 
-  const pendingInvoices = mockInvoices.filter((inv) => inv.status === 'pending');
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+
+    let isMounted = true;
+
+    fetchJson('/api/invoices?status=PENDING')
+      .then((data) => {
+        if (isMounted && data?.success) {
+          setInvoices(data.invoices || []);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load mintable invoices:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [open]);
 
   const handleMint = async () => {
     if (!selectedInvoice || !dueDate) {
@@ -18,20 +40,34 @@ export const MintModal = ({ open, onClose }) => {
       return;
     }
 
+    const invoice = invoices.find((entry) => entry.id === selectedInvoice);
+
+    if (!invoice) {
+      toast.error('Invoice not found');
+      return;
+    }
+
     try {
-      const invoice = mockInvoices.find((inv) => inv.id === selectedInvoice);
       const result = await mintNFT({
-        businessId: 'BUSINESS_001',
-        clientName: invoice.clientName,
-        amountInr: invoice.amount,
+        businessId: getBusinessId(),
+        clientName: invoice.clients?.name || 'Unknown Client',
+        amountInr: Number(invoice.amount || 0),
         dueDateUnix: new Date(dueDate).getTime() / 1000,
         invoiceId: invoice.id
       });
 
       toast.success('NFT Minted Successfully!', {
-        description: `Token ID: ${result.tokenId}`
+        description: `Token ID: ${result.tokenId || 'pending'}`
       });
+
+      if (result.explorerUrl) {
+        window.open(result.explorerUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      setSelectedInvoice('');
+      setDueDate('');
       onClose();
+      onMinted?.();
     } catch (error) {
       toast.error('Failed to mint NFT', {
         description: error.message
@@ -55,7 +91,7 @@ export const MintModal = ({ open, onClose }) => {
             </label>
             <select
               value={selectedInvoice}
-              onChange={(e) => setSelectedInvoice(e.target.value)}
+              onChange={(event) => setSelectedInvoice(event.target.value)}
               data-testid="invoice-select"
               className="
                 w-full px-4 py-3
@@ -66,9 +102,9 @@ export const MintModal = ({ open, onClose }) => {
               "
             >
               <option value="">Choose an invoice...</option>
-              {pendingInvoices.map((invoice) => (
+              {invoices.map((invoice) => (
                 <option key={invoice.id} value={invoice.id}>
-                  {invoice.id} - {invoice.clientName} - {formatCurrency(invoice.amount)}
+                  {invoice.id} - {invoice.clients?.name || 'Unknown Client'} - {formatCurrency(Number(invoice.amount || 0))}
                 </option>
               ))}
             </select>
@@ -78,21 +114,19 @@ export const MintModal = ({ open, onClose }) => {
             <label className="text-xs uppercase tracking-wider text-khata-muted block mb-2 font-bold">
               Due Date
             </label>
-            <div className="relative">
-              <input
-                type="date"
-                value={dueDate}
-                onChange={(e) => setDueDate(e.target.value)}
-                data-testid="due-date-input"
-                className="
-                  w-full px-4 py-3
-                  bg-khata-bg text-khata-text
-                  border-[3px] border-khata-border
-                  focus:border-khata-chain focus:outline-none
-                  font-body
-                "
-              />
-            </div>
+            <input
+              type="date"
+              value={dueDate}
+              onChange={(event) => setDueDate(event.target.value)}
+              data-testid="due-date-input"
+              className="
+                w-full px-4 py-3
+                bg-khata-bg text-khata-text
+                border-[3px] border-khata-border
+                focus:border-khata-chain focus:outline-none
+                font-body
+              "
+            />
           </div>
 
           <div className="pt-4 flex gap-3">

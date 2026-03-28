@@ -1,7 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Eye, Coins } from 'lucide-react';
-import { mockClients, formatCurrency } from '../../lib/mockData';
+import { useNavigate } from 'react-router-dom';
+import { formatCurrency } from '../../lib/mockData';
 import { format } from 'date-fns';
+import { fetchJson } from '../../lib/api';
 import {
   Dialog,
   DialogContent,
@@ -9,8 +11,59 @@ import {
   DialogTitle,
 } from '../ui/dialog';
 
+function getTransactionDescription(transaction) {
+  if (transaction.type === 'PAYMENT') {
+    return 'Payment received';
+  }
+
+  if (Array.isArray(transaction.items) && transaction.items.length > 0) {
+    return transaction.items
+      .map((item) => `${item.name} (${item.qty || item.quantity || 0} ${item.unit || ''})`)
+      .join(', ');
+  }
+
+  return 'Sale recorded';
+}
+
 export const ClientTable = () => {
+  const navigate = useNavigate();
+  const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(null);
+  const [loadingClientId, setLoadingClientId] = useState(null);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchJson('/api/ledger/clients')
+      .then((data) => {
+        if (isMounted && data?.success) {
+          setClients(data.clients || []);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load clients:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleViewClient = async (client) => {
+    setLoadingClientId(client.id);
+
+    try {
+      const data = await fetchJson(`/api/ledger/clients/${client.id}`);
+      setSelectedClient({
+        ...data.client,
+        transactions: data.transactions || []
+      });
+    } catch (error) {
+      console.error('Failed to load client details:', error);
+    } finally {
+      setLoadingClientId(null);
+    }
+  };
 
   return (
     <>
@@ -32,7 +85,7 @@ export const ClientTable = () => {
           </div>
         </div>
         <div>
-          {mockClients.map((client) => (
+          {clients.map((client) => (
             <div
               key={client.id}
               className="grid grid-cols-12 gap-4 p-4 border-b border-khata-border hover:bg-khata-bg/50 transition-colors"
@@ -43,17 +96,19 @@ export const ClientTable = () => {
               </div>
               <div className="col-span-3">
                 <p className="text-sm font-bold text-khata-accent">
-                  {formatCurrency(client.outstanding)}
+                  {formatCurrency(Number(client.total_outstanding || 0))}
                 </p>
               </div>
               <div className="col-span-3">
                 <p className="text-sm text-khata-muted">
-                  {format(new Date(client.lastTransaction), 'MMM dd, yyyy')}
+                  {client.lastTransaction
+                    ? format(new Date(client.lastTransaction), 'MMM dd, yyyy')
+                    : 'No transactions'}
                 </p>
               </div>
               <div className="col-span-3 flex gap-2">
                 <button
-                  onClick={() => setSelectedClient(client)}
+                  onClick={() => handleViewClient(client)}
                   data-testid={`view-client-btn-${client.id}`}
                   className="
                     px-3 py-1 text-xs
@@ -66,9 +121,10 @@ export const ClientTable = () => {
                   "
                 >
                   <Eye className="w-3 h-3" />
-                  View
+                  {loadingClientId === client.id ? 'Loading...' : 'View'}
                 </button>
                 <button
+                  onClick={() => navigate('/chain')}
                   data-testid={`mint-client-btn-${client.id}`}
                   className="
                     px-3 py-1 text-xs
@@ -102,7 +158,7 @@ export const ClientTable = () => {
                 <div>
                   <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Outstanding Amount</p>
                   <p className="text-3xl font-heading text-khata-accent">
-                    {formatCurrency(selectedClient.outstanding)}
+                    {formatCurrency(Number(selectedClient.total_outstanding || 0))}
                   </p>
                 </div>
                 <div>
@@ -112,25 +168,27 @@ export const ClientTable = () => {
                   </p>
                 </div>
               </div>
-              
+
               <div>
                 <h4 className="text-sm font-bold uppercase tracking-wider text-khata-muted mb-3">Transaction History</h4>
                 <div className="space-y-2">
-                  {selectedClient.transactions.map((txn) => (
+                  {selectedClient.transactions.map((transaction) => (
                     <div
-                      key={txn.id}
+                      key={transaction.id}
                       className="bg-khata-bg border-[2px] border-khata-border p-3"
-                      data-testid={`transaction-${txn.id}`}
+                      data-testid={`transaction-${transaction.id}`}
                     >
                       <div className="flex justify-between items-start">
                         <div>
-                          <p className="text-sm text-khata-text font-bold">{txn.description}</p>
+                          <p className="text-sm text-khata-text font-bold">
+                            {getTransactionDescription(transaction)}
+                          </p>
                           <p className="text-xs text-khata-muted mt-1">
-                            {format(new Date(txn.date), 'MMM dd, yyyy')}
+                            {format(new Date(transaction.created_at), 'MMM dd, yyyy')}
                           </p>
                         </div>
                         <p className="text-lg font-heading text-khata-accent">
-                          {formatCurrency(txn.amount)}
+                          {formatCurrency(Number(transaction.amount || 0))}
                         </p>
                       </div>
                     </div>

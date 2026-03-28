@@ -1,74 +1,59 @@
 import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
+import { fetchJson } from '../lib/api';
 
 export const useAgent = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const { addMessage } = useAppStore();
+  const { conversationHistory, addMessage } = useAppStore();
 
   const sendMessage = async (message) => {
-    setIsLoading(true);
-    
-    addMessage({
-      role: 'user',
-      content: message,
-      timestamp: new Date().toISOString()
-    });
+    const trimmedMessage = message.trim();
+    if (!trimmedMessage) {
+      return;
+    }
 
-    setTimeout(() => {
-      const mockResponse = generateMockResponse(message);
+    setIsLoading(true);
+
+    const userMessage = {
+      role: 'user',
+      content: trimmedMessage,
+      timestamp: new Date().toISOString()
+    };
+
+    addMessage(userMessage);
+
+    try {
+      const data = await fetchJson('/api/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          message: trimmedMessage,
+          conversationHistory: [...conversationHistory, userMessage]
+            .slice(-10)
+            .map((entry) => ({
+              role: entry.role,
+              content: entry.content
+            }))
+        })
+      });
+
       addMessage({
         role: 'ai',
-        content: mockResponse.content,
-        action: mockResponse.action,
+        content: data.action?.response || 'Done!',
+        action: data.action,
+        dbResult: data.dbResult,
         timestamp: new Date().toISOString()
       });
+    } catch (error) {
+      console.error('Agent error:', error);
+      addMessage({
+        role: 'ai',
+        content: `Error: ${error.message}. Make sure the backend is running on port 8001.`,
+        timestamp: new Date().toISOString()
+      });
+    } finally {
       setIsLoading(false);
-    }, 1500);
+    }
   };
 
   return { sendMessage, isLoading };
 };
-
-function generateMockResponse(message) {
-  const lowerMsg = message.toLowerCase();
-  
-  if (lowerMsg.includes('ramesh') || lowerMsg.includes('udhaar')) {
-    return {
-      content: "I've recorded this transaction for Ramesh Kumar.",
-      action: {
-        type: 'confirm_transaction',
-        data: {
-          client: 'Ramesh Kumar',
-          amount: 200,
-          item: 'Aloo (5kg)',
-          type: 'credit'
-        }
-      }
-    };
-  }
-  
-  if (lowerMsg.includes('stock') || lowerMsg.includes('inventory')) {
-    return {
-      content: "Here's your current inventory status. You have 3 items with low stock.",
-      action: null
-    };
-  }
-  
-  if (lowerMsg.includes('payment') || lowerMsg.includes('paid')) {
-    return {
-      content: "Payment recorded! I'll update the ledger.",
-      action: {
-        type: 'payment_received',
-        data: {
-          client: 'Ramesh Kumar',
-          amount: 500
-        }
-      }
-    };
-  }
-  
-  return {
-    content: "I understand. How can I help you with your business today?",
-    action: null
-  };
-}

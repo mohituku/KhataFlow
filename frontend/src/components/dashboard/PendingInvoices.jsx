@@ -1,14 +1,37 @@
+import { useEffect, useState } from 'react';
 import { Coins } from 'lucide-react';
-import { formatCurrency, mockInvoices } from '../../lib/mockData';
+import { useNavigate } from 'react-router-dom';
+import { formatCurrency } from '../../lib/mockData';
+import { fetchJson } from '../../lib/api';
 import { toast } from 'sonner';
 
 export const PendingInvoices = () => {
-  const pendingInvoices = mockInvoices.filter((inv) => inv.status === 'pending');
+  const navigate = useNavigate();
+  const [pendingInvoices, setPendingInvoices] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchJson('/api/invoices?status=PENDING')
+      .then((data) => {
+        if (isMounted && data?.success) {
+          setPendingInvoices(data.invoices || []);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load pending invoices:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleMintNFT = (invoice) => {
-    toast.success('Redirecting to Chain page...', {
-      description: `Minting NFT for ${invoice.clientName}`
+    toast.success('Open the Chain page to mint this invoice.', {
+      description: `Selected invoice ${invoice.id}`
     });
+    navigate('/chain');
   };
 
   return (
@@ -32,10 +55,10 @@ export const PendingInvoices = () => {
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <p className="text-sm text-khata-muted uppercase tracking-wider">{invoice.id}</p>
-                  <p className="text-lg font-bold text-khata-text">{invoice.clientName}</p>
+                  <p className="text-lg font-bold text-khata-text">{invoice.clients?.name || 'Unknown Client'}</p>
                 </div>
                 <p className="text-2xl font-heading text-khata-accent">
-                  {formatCurrency(invoice.amount)}
+                  {formatCurrency(Number(invoice.amount || 0))}
                 </p>
               </div>
               <button

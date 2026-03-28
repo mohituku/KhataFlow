@@ -1,17 +1,6 @@
 import { create } from 'zustand';
 import { ethers } from 'ethers';
-
-const FLOW_TESTNET = {
-  chainId: '0x221',
-  chainName: 'Flow EVM Testnet',
-  rpcUrls: ['https://testnet.evm.nodes.onflow.org'],
-  nativeCurrency: {
-    name: 'FLOW',
-    symbol: 'FLOW',
-    decimals: 18
-  },
-  blockExplorerUrls: ['https://evm-testnet.flowscan.io']
-};
+import { FLOW_TESTNET } from '../lib/contracts';
 
 export const useWalletStore = create((set) => ({
   address: null,
@@ -22,13 +11,29 @@ export const useWalletStore = create((set) => ({
 
   connect: async () => {
     set({ isConnecting: true, error: null });
-    
+
     try {
       if (!window.ethereum) {
-        throw new Error('MetaMask not installed');
+        throw new Error('MetaMask not installed. Please install MetaMask extension.');
       }
 
       await window.ethereum.request({ method: 'eth_requestAccounts' });
+
+      try {
+        await window.ethereum.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: FLOW_TESTNET.chainId }]
+        });
+      } catch (switchError) {
+        if (switchError.code === 4902) {
+          await window.ethereum.request({
+            method: 'wallet_addEthereumChain',
+            params: [FLOW_TESTNET]
+          });
+        } else {
+          throw switchError;
+        }
+      }
 
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();

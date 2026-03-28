@@ -1,16 +1,38 @@
+import { useEffect, useState } from 'react';
 import { FileText, Download } from 'lucide-react';
-import { mockInvoices, formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/mockData';
 import { format } from 'date-fns';
 import { toast } from 'sonner';
+import { fetchJson } from '../../lib/api';
 
 export const InvoiceList = () => {
+  const [invoices, setInvoices] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchJson('/api/invoices')
+      .then((data) => {
+        if (isMounted && data?.success) {
+          setInvoices(data.invoices || []);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load invoices:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const handleDownload = (invoiceId) => {
-    toast.success(`Downloading ${invoiceId}...`);
+    toast.success(`Download is not wired yet for ${invoiceId}.`);
   };
 
   return (
     <div className="space-y-4" data-testid="invoice-list">
-      {mockInvoices.map((invoice) => (
+      {invoices.map((invoice) => (
         <div
           key={invoice.id}
           className="bg-khata-surface border-[3px] border-khata-border p-6 hover:border-khata-accent hover:-translate-y-1 transition-all duration-300"
@@ -30,7 +52,7 @@ export const InvoiceList = () => {
               className={`
                 px-3 py-1 border-[2px]
                 ${
-                  invoice.status === 'pending'
+                  invoice.status === 'PENDING'
                     ? 'border-khata-warning text-khata-warning'
                     : 'border-khata-accent text-khata-accent'
                 }
@@ -43,16 +65,16 @@ export const InvoiceList = () => {
           <div className="grid grid-cols-3 gap-4 mb-4">
             <div>
               <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Client</p>
-              <p className="text-sm font-bold text-khata-text">{invoice.clientName}</p>
+              <p className="text-sm font-bold text-khata-text">{invoice.clients?.name || 'Unknown Client'}</p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Amount</p>
-              <p className="text-lg font-heading text-khata-accent">{formatCurrency(invoice.amount)}</p>
+              <p className="text-lg font-heading text-khata-accent">{formatCurrency(Number(invoice.amount || 0))}</p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Date</p>
               <p className="text-sm font-bold text-khata-text">
-                {format(new Date(invoice.date), 'MMM dd, yyyy')}
+                {format(new Date(invoice.created_at), 'MMM dd, yyyy')}
               </p>
             </div>
           </div>
@@ -60,14 +82,17 @@ export const InvoiceList = () => {
           <div className="pt-4 border-t-[2px] border-khata-border">
             <h4 className="text-xs uppercase tracking-wider text-khata-muted mb-2 font-bold">Items</h4>
             <div className="space-y-1">
-              {invoice.items.map((item, idx) => (
-                <div key={idx} className="flex justify-between text-sm">
+              {(invoice.items || []).map((item, index) => (
+                <div key={index} className="flex justify-between text-sm">
                   <span className="text-khata-text">
-                    {item.name} ({item.quantity} {item.unit})
+                    {item.name} ({item.qty || item.quantity || 0} {item.unit})
                   </span>
-                  <span className="text-khata-muted">{formatCurrency(item.price)}</span>
+                  <span className="text-khata-muted">{formatCurrency(Number(item.price || 0))}</span>
                 </div>
               ))}
+              {(!invoice.items || invoice.items.length === 0) && (
+                <div className="text-sm text-khata-muted">No line items recorded.</div>
+              )}
             </div>
           </div>
 

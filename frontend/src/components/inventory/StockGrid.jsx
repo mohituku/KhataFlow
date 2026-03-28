@@ -1,10 +1,31 @@
+import { useEffect, useState } from 'react';
 import { AlertTriangle, Package as PackageIcon } from 'lucide-react';
-import { mockInventory } from '../../lib/mockData';
+import { fetchJson } from '../../lib/api';
 
 export const StockGrid = () => {
+  const [inventory, setInventory] = useState([]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchJson('/api/inventory')
+      .then((data) => {
+        if (isMounted && data?.success) {
+          setInventory(data.inventory || []);
+        }
+      })
+      .catch((error) => {
+        console.error('Failed to load inventory:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="stock-grid">
-      {mockInventory.map((item) => (
+      {inventory.map((item) => (
         <div
           key={item.id}
           className={`
@@ -41,9 +62,9 @@ export const StockGrid = () => {
               </span>
             )}
           </div>
-          <h3 className="text-xl font-heading text-khata-text mb-2">{item.name}</h3>
+          <h3 className="text-xl font-heading text-khata-text mb-2">{item.item_name}</h3>
           <div className="flex items-baseline gap-2">
-            <p className="text-3xl font-heading text-khata-accent">{item.quantity}</p>
+            <p className="text-3xl font-heading text-khata-accent">{Number(item.quantity || 0)}</p>
             <p className="text-sm text-khata-muted uppercase tracking-wider">{item.unit}</p>
           </div>
         </div>

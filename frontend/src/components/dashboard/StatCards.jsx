@@ -1,41 +1,77 @@
+import { useEffect, useState } from 'react';
 import { TrendingUp, AlertCircle, Wallet, Users } from 'lucide-react';
-import { formatCurrency, mockStats } from '../../lib/mockData';
-
-const stats = [
-  {
-    label: 'Total Revenue',
-    value: mockStats.totalRevenue,
-    icon: TrendingUp,
-    color: 'accent',
-    testId: 'stat-revenue'
-  },
-  {
-    label: 'Pending Amount',
-    value: mockStats.pendingAmount,
-    icon: AlertCircle,
-    color: 'warning',
-    testId: 'stat-pending'
-  },
-  {
-    label: 'Active NFTs',
-    value: mockStats.activeNFTs,
-    icon: Wallet,
-    color: 'chain',
-    testId: 'stat-nfts'
-  },
-  {
-    label: 'Total Clients',
-    value: mockStats.totalClients,
-    icon: Users,
-    color: 'text',
-    testId: 'stat-clients'
-  }
-];
+import { formatCurrency } from '../../lib/mockData';
+import { fetchJson } from '../../lib/api';
 
 export const StatCards = () => {
+  const [stats, setStats] = useState({
+    totalRevenue: 0,
+    totalOutstanding: 0,
+    activeNFTs: 0,
+    totalClients: 0
+  });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    fetchJson('/api/ledger/summary')
+      .then((data) => {
+        if (!isMounted || !data?.success) {
+          return;
+        }
+
+        setStats({
+          totalRevenue: Number(data.summary?.totalRevenue || 0),
+          totalOutstanding: Number(data.summary?.totalOutstanding || 0),
+          activeNFTs: Number(data.summary?.activeNFTs || 0),
+          totalClients: Number(data.summary?.totalClients || 0)
+        });
+      })
+      .catch((error) => {
+        console.error('Failed to load stats:', error);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const cards = [
+    {
+      label: 'Total Revenue',
+      value: stats.totalRevenue,
+      icon: TrendingUp,
+      color: 'accent',
+      testId: 'stat-revenue',
+      isCurrency: true
+    },
+    {
+      label: 'Pending Amount',
+      value: stats.totalOutstanding,
+      icon: AlertCircle,
+      color: 'warning',
+      testId: 'stat-pending',
+      isCurrency: true
+    },
+    {
+      label: 'Active NFTs',
+      value: stats.activeNFTs,
+      icon: Wallet,
+      color: 'chain',
+      testId: 'stat-nfts'
+    },
+    {
+      label: 'Total Clients',
+      value: stats.totalClients,
+      icon: Users,
+      color: 'text',
+      testId: 'stat-clients'
+    }
+  ];
+
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="stat-cards">
-      {stats.map((stat) => {
+      {cards.map((stat) => {
         const Icon = stat.icon;
         const colorClass = `text-khata-${stat.color}`;
 
@@ -56,9 +92,7 @@ export const StatCards = () => {
               {stat.label}
             </p>
             <p className={`text-4xl font-heading ${colorClass}`}>
-              {typeof stat.value === 'number' && stat.label.toLowerCase().includes('amount') || stat.label.toLowerCase().includes('revenue')
-                ? formatCurrency(stat.value)
-                : stat.value}
+              {stat.isCurrency ? formatCurrency(stat.value) : stat.value}
             </p>
           </div>
         );

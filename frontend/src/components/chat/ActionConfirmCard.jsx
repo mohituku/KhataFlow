@@ -1,18 +1,40 @@
+import { useState } from 'react';
 import { Check, X } from 'lucide-react';
 import { formatCurrency } from '../../lib/mockData';
 import { toast } from 'sonner';
 
-export const ActionConfirmCard = ({ action }) => {
-  if (!action) return null;
+function getActionTitle(action) {
+  switch (action.intent) {
+    case 'ADD_SALE':
+      return 'Sale Recorded';
+    case 'MARK_PAID':
+      return 'Payment Recorded';
+    case 'UPDATE_STOCK':
+      return 'Stock Updated';
+    case 'QUERY_LEDGER':
+      return 'Ledger Lookup';
+    default:
+      return 'Action Summary';
+  }
+}
 
-  const handleConfirm = () => {
-    toast.success('Transaction confirmed!', {
-      description: `Added ${formatCurrency(action.data.amount)} to ledger`
-    });
+export const ActionConfirmCard = ({ action }) => {
+  const [dismissed, setDismissed] = useState(false);
+
+  if (!action || dismissed) {
+    return null;
+  }
+
+  const amount = action.paymentAmount ?? action.totalAmount ?? 0;
+  const firstItem = Array.isArray(action.items) && action.items.length > 0 ? action.items[0] : null;
+
+  const handleAcknowledge = () => {
+    toast.success('Action acknowledged');
+    setDismissed(true);
   };
 
-  const handleReject = () => {
-    toast.error('Transaction cancelled');
+  const handleDismiss = () => {
+    setDismissed(true);
   };
 
   return (
@@ -23,26 +45,32 @@ export const ActionConfirmCard = ({ action }) => {
       <div className="flex items-start justify-between mb-4">
         <div>
           <h4 className="text-sm font-bold text-khata-warning uppercase tracking-wider mb-2">
-            Confirm Transaction
+            {getActionTitle(action)}
           </h4>
           <div className="space-y-1 text-sm">
-            <p className="text-khata-text">
-              <span className="text-khata-muted">Client:</span>{' '}
-              <span className="font-bold">{action.data.client}</span>
-            </p>
-            <p className="text-khata-text">
-              <span className="text-khata-muted">Amount:</span>{' '}
-              <span className="font-bold text-khata-accent">{formatCurrency(action.data.amount)}</span>
-            </p>
-            {action.data.item && (
+            {action.clientName && (
+              <p className="text-khata-text">
+                <span className="text-khata-muted">Client:</span>{' '}
+                <span className="font-bold">{action.clientName}</span>
+              </p>
+            )}
+            {amount > 0 && (
+              <p className="text-khata-text">
+                <span className="text-khata-muted">Amount:</span>{' '}
+                <span className="font-bold text-khata-accent">{formatCurrency(Number(amount))}</span>
+              </p>
+            )}
+            {firstItem && (
               <p className="text-khata-text">
                 <span className="text-khata-muted">Item:</span>{' '}
-                <span className="font-bold">{action.data.item}</span>
+                <span className="font-bold">
+                  {firstItem.name} ({firstItem.qty || firstItem.quantity || 0} {firstItem.unit})
+                </span>
               </p>
             )}
             <p className="text-khata-text">
-              <span className="text-khata-muted">Type:</span>{' '}
-              <span className="font-bold uppercase">{action.data.type}</span>
+              <span className="text-khata-muted">Intent:</span>{' '}
+              <span className="font-bold uppercase">{action.intent}</span>
             </p>
           </div>
         </div>
@@ -50,7 +78,7 @@ export const ActionConfirmCard = ({ action }) => {
 
       <div className="flex gap-2">
         <button
-          onClick={handleConfirm}
+          onClick={handleAcknowledge}
           data-testid="confirm-action-btn"
           className="
             flex-1 clip-angled-sm
@@ -65,10 +93,10 @@ export const ActionConfirmCard = ({ action }) => {
           }}
         >
           <Check className="w-4 h-4" />
-          Confirm
+          Got it
         </button>
         <button
-          onClick={handleReject}
+          onClick={handleDismiss}
           data-testid="reject-action-btn"
           className="
             flex-1
@@ -81,7 +109,7 @@ export const ActionConfirmCard = ({ action }) => {
           "
         >
           <X className="w-4 h-4" />
-          Cancel
+          Dismiss
         </button>
       </div>
     </div>
