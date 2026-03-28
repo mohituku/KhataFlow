@@ -1,0 +1,10 @@
+.App {
+  min-height: 100vh;
+  background-color: #0F1117;
+}
+
+.tech-grid-bg {
+  background-image: 
+    radial-gradient(circle at 1px 1px, rgba(0, 208, 132, 0.15) 1px, transparent 0);
+  background-size: 40px 40px;
+}
