@@ -1,381 +1,338 @@
-# 🚀 KhataFlow Backend - Setup Guide
+# KhataFlow Backend
 
-Complete **Node.js + Express + TypeScript** backend for KhataFlow AI-powered business ledger.
-
----
-
-## 📋 Tech Stack
-
-- **Runtime:** Node.js + TypeScript
-- **Framework:** Express.js
-- **Database:** Supabase (PostgreSQL)
-- **AI:** Google Gemini 2.0 Flash
-- **Blockchain:** ethers.js v6 (Flow EVM Testnet)
-- **Validation:** Zod
+> Express.js + TypeScript REST API — AI-powered business command processing, ledger management, and Flow EVM blockchain integration.
 
 ---
 
-## 🎯 Quick Start
+## Overview
 
-### 1️⃣ Install Dependencies
+The KhataFlow backend is the central nervous system of the platform. It accepts natural language business commands, parses them via Google Gemini AI, persists data to Supabase (PostgreSQL), and communicates with smart contracts deployed on Flow EVM Testnet.
+
+**Running on:** `http://localhost:8001`
+
+---
+
+## Tech Stack
+
+| Technology | Version | Role |
+|---|---|---|
+| Express.js | ^4.21.2 | HTTP server and routing |
+| TypeScript | ^5.7.2 | Type safety |
+| Google Gemini AI | ^0.21.0 | Natural language parsing |
+| Supabase JS | ^2.48.1 | PostgreSQL database client |
+| ethers.js | ^6.13.0 | Flow EVM blockchain interactions |
+| Zod | ^3.24.1 | Runtime request validation |
+| dotenv | ^16.4.7 | Environment configuration |
+| cors | ^2.8.5 | Cross-origin resource sharing |
+
+---
+
+## Project Structure
+
+```
+backend/
+├── src/
+│   ├── index.ts              # Express app + server bootstrap
+│   ├── middleware/
+│   │   └── businessId.ts     # Extracts business ID from requests
+│   ├── routes/
+│   │   ├── chat.ts           # POST /api/chat — AI command processor
+│   │   ├── ledger.ts         # GET /api/ledger/* — clients & transactions
+│   │   ├── inventory.ts      # /api/inventory — stock management
+│   │   ├── invoices.ts       # /api/invoices — invoice CRUD
+│   │   └── chain.ts          # /api/chain — blockchain record ops
+│   ├── services/
+│   │   ├── gemini.ts         # Gemini 2.0 Flash NLP service
+│   │   ├── blockchain.ts     # Flow EVM provider + NFT contract calls
+│   │   └── supabase.ts       # Supabase client singleton
+│   ├── contracts/
+│   │   └── KhataFlowNFT.json # ABI for on-chain calls
+│   └── types/                # Shared TypeScript types
+├── schema.sql                # Full PostgreSQL schema + seed data
+├── .env.example              # Required environment variables
+├── package.json
+└── tsconfig.json
+```
+
+---
+
+## Setup & Running
+
+### 1. Install dependencies
 
 ```bash
-cd /app/backend
+cd backend
 yarn install
 ```
 
-### 2️⃣ Set Up Environment Variables
-
-Create `.env` file from the example:
+### 2. Configure environment
 
 ```bash
 cp .env.example .env
 ```
 
-Then edit `.env` with your credentials (see setup guide below).
+| Variable | Where to get it | Required |
+|---|---|---|
+| `SUPABASE_URL` | Supabase → Settings → API → Project URL | ✅ Yes |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase → Settings → API → service_role key | ✅ Yes |
+| `GEMINI_API_KEY` | [Google AI Studio](https://aistudio.google.com/apikey) | ✅ Yes (or uses mock) |
+| `FLOW_EVM_RPC` | `https://testnet.evm.nodes.onflow.org` | Optional (has default) |
+| `NFT_CONTRACT_ADDRESS` | From `contracts/deployed-addresses.json` | Optional |
+| `PAYMENTS_CONTRACT_ADDRESS` | From `contracts/deployed-addresses.json` | Optional |
+| `PORT` | Any open port | Optional (default: `8001`) |
+| `CORS_ORIGINS` | Frontend URL | Optional (default: `*`) |
 
-### 3️⃣ Set Up Supabase Database
+### 3. Set up the database
 
-1. **Create Supabase Project:**
-   - Go to https://supabase.com
-   - Click "New Project"
-   - Choose a name and password
-   - Wait for project to initialize (~2 minutes)
+Run `schema.sql` in your Supabase SQL Editor. This creates all tables, indexes, RPC functions, and seeds sample data.
 
-2. **Run Database Schema:**
-   - Go to your Supabase dashboard
-   - Navigate to **SQL Editor** (left sidebar)
-   - Click "New Query"
-   - Copy entire content from `/app/backend/schema.sql`
-   - Paste and click **Run**
-   - You should see "Success. No rows returned"
-
-3. **Get API Credentials:**
-   - Go to **Project Settings** > **API**
-   - Copy **Project URL** → `SUPABASE_URL`
-   - Copy **service_role** key (secret) → `SUPABASE_SERVICE_ROLE_KEY`
-   - ⚠️ **IMPORTANT:** Use `service_role` key, NOT `anon` key
-
-### 4️⃣ Get Google Gemini API Key
-
-1. Go to https://aistudio.google.com/apikey
-2. Click "Create API Key"
-3. Select existing project or create new
-4. Copy the API key → `GEMINI_API_KEY`
-
-### 5️⃣ Update .env File
+### 4. Start the server
 
 ```bash
-# Supabase Configuration
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# Google Gemini AI
-GEMINI_API_KEY=AIzaSyA...
-
-# Flow EVM Configuration (default values work)
-FLOW_EVM_RPC=https://testnet.evm.nodes.onflow.org
-NFT_CONTRACT_ADDRESS=0x0000000000000000000000000000000000000000
-
-# Server Configuration
-PORT=8001
-NODE_ENV=development
-```
-
-### 6️⃣ Start Backend Server
-
-**Development mode (with hot reload):**
-```bash
+# Development (hot-reload)
 yarn dev
-```
 
-**Build for production:**
-```bash
+# Production build
 yarn build
 yarn start
 ```
 
 ---
 
-## 🏗️ Project Structure
-
-```
-/app/backend/
-├── src/
-│   ├── index.ts              # Express server entry point
-│   ├── routes/
-│   │   ├── chat.ts           # AI chat + business logic
-│   │   ├── ledger.ts         # Client management
-│   │   ├── inventory.ts      # Stock management
-│   │   ├── invoices.ts       # Invoice operations
-│   │   └── chain.ts          # Blockchain verification
-│   ├── services/
-│   │   ├── supabase.ts       # Supabase client
-│   │   ├── gemini.ts         # Gemini AI service
-│   │   └── blockchain.ts     # Flow EVM service
-│   ├── types/
-│   │   └── index.ts          # TypeScript interfaces
-├── schema.sql                # Supabase database schema
-├── package.json
-├── tsconfig.json
-└── .env
-```
-
----
-
-## 🔌 API Endpoints
+## API Endpoints
 
 ### Health Check
-```bash
+
+```
 GET /health
 ```
 
-### Chat (AI Parsing)
-```bash
-POST /api/chat
-Body: {
-  "message": "Ramesh ne 5kg aloo liya 200 baaki hai",
-  "conversationHistory": []
-}
-```
-
-### Ledger
-```bash
-GET /api/ledger/clients          # Get all clients
-GET /api/ledger/summary          # Get business summary
-GET /api/ledger/clients/:id      # Get client details
-```
-
-### Inventory
-```bash
-GET /api/inventory               # Get all stock items
-POST /api/inventory              # Add/update stock
-PATCH /api/inventory/:id         # Update quantity
-```
-
-### Invoices
-```bash
-GET /api/invoices                # Get all invoices
-POST /api/invoices               # Create invoice
-GET /api/invoices/:id            # Get invoice details
-PATCH /api/invoices/:id          # Update invoice
-```
-
-### Blockchain
-```bash
-POST /api/chain/record-mint      # Record NFT mint
-GET /api/chain/token/:tokenId    # Get NFT details
-GET /api/chain/tx/:txHash        # Get transaction status
-```
-
----
-
-## 🧪 Testing the Backend
-
-### 1. Health Check
-```bash
-curl http://localhost:8001/health
-```
-
-Expected response:
+Response:
 ```json
 {
   "status": "ok",
   "service": "KhataFlow Backend",
   "chain": "flow-evm-testnet",
-  "timestamp": "2024-01-15T10:30:00.000Z"
+  "timestamp": "2026-03-29T01:00:00.000Z"
 }
 ```
 
-### 2. Test Chat Endpoint
-```bash
-curl -X POST http://localhost:8001/api/chat \
-  -H "Content-Type: application/json" \
-  -d '{
-    "message": "Ramesh ne 5kg aloo liya 200 baaki hai"
-  }'
+---
+
+### POST `/api/chat`
+
+The core AI endpoint. Accepts a natural language message (Hindi / English / Hinglish), parses it with Gemini, executes the corresponding database operation, and returns structured results.
+
+**Request:**
+```json
+{
+  "message": "Ramesh ne 5kg aloo liya, 200 baaki hai",
+  "conversationHistory": [
+    { "role": "user", "content": "Previous message" },
+    { "role": "model", "content": "Previous response" }
+  ]
+}
 ```
 
-### 3. Test Ledger
-```bash
-curl http://localhost:8001/api/ledger/clients
+**Response:**
+```json
+{
+  "success": true,
+  "action": {
+    "intent": "ADD_SALE",
+    "response": "Ramesh ka khata update ho gaya!",
+    "clientName": "Ramesh",
+    "items": [{ "name": "aloo", "qty": 5, "unit": "kg", "price": 40 }],
+    "totalAmount": 200,
+    "paymentAmount": null
+  },
+  "dbResult": {
+    "client": { "id": "...", "name": "Ramesh", "total_outstanding": 200 },
+    "transaction": { "id": "...", "type": "SALE", "amount": 200 }
+  }
+}
 ```
 
-### 4. Test Inventory
-```bash
-curl http://localhost:8001/api/inventory
+**Intent types:**
+
+| Intent | Triggered by | DB action |
+|---|---|---|
+| `ADD_SALE` | "liya", "udhaar", "baaki", "khate me likh" | Insert transaction + increment client balance |
+| `MARK_PAID` | "diya", "payment kiya", "cash diya" | Insert payment + decrement client balance |
+| `UPDATE_STOCK` | "stock", "inventory", "add karo", "bhar do" | Upsert inventory items |
+| `QUERY_LEDGER` | "khata dikhao", "kitna baaki", "ledger" | Fetch client transactions |
+| `UNKNOWN` | Anything else | No DB action, friendly message |
+
+---
+
+### GET `/api/ledger/clients`
+
+Returns all clients for the business with their outstanding balances and timestamp of last transaction.
+
+### GET `/api/ledger/clients/:clientId`
+
+Returns a single client with their full transaction history.
+
+### GET `/api/ledger/summary`
+
+Returns aggregate dashboard stats:
+```json
+{
+  "summary": {
+    "totalOutstanding": 14700,
+    "totalRevenue": 52000,
+    "pendingTransactions": 3,
+    "totalClients": 4,
+    "activeNFTs": 2
+  }
+}
+```
+
+### GET `/api/ledger/activity`
+
+Returns a unified activity feed (last 10 events) combining sales, payments, NFT mints, and low-stock alerts — sorted by timestamp.
+
+---
+
+### GET `/api/inventory`
+
+Returns all inventory items with a computed `lowStock: boolean` flag (true when `quantity <= low_stock_threshold`).
+
+### POST `/api/inventory`
+
+Add or update an inventory item (upserts on `business_id + item_name`):
+```json
+{
+  "item_name": "Rice",
+  "quantity": 100,
+  "unit": "kg",
+  "low_stock_threshold": 20
+}
+```
+
+### PATCH `/api/inventory/:itemId`
+
+Update quantity of a specific item:
+```json
+{ "quantity": 75 }
 ```
 
 ---
 
-## 🎯 Key Features
+### GET `/api/invoices`
 
-### ✅ AI-Powered Business Command Parsing
-- Parses natural language (Hindi/English mix)
-- Intents: `ADD_SALE`, `UPDATE_STOCK`, `QUERY_LEDGER`, `MARK_PAID`
-- Automatic transaction recording
+Returns all invoices (optionally filter with `?status=MINTED` or `?status=PENDING`). Includes joined client name.
 
-### ✅ Complete Business Logic
-- **Add Sale:** Upserts client, creates transaction, updates balance
-- **Update Stock:** Manages inventory with low-stock tracking
-- **Query Ledger:** Fetches client details and transaction history
-- **Mark Paid:** Records payments and updates balances
+### POST `/api/invoices`
 
-### ✅ Blockchain Integration
-- Flow EVM Testnet support
-- Transaction verification
-- NFT mint recording
-- Explorer links
+Create a new invoice:
+```json
+{
+  "client_id": "uuid-here",
+  "amount": 5000,
+  "items": [],
+  "status": "PENDING"
+}
+```
 
-### ✅ Database Management
-- PostgreSQL via Supabase
-- Automatic timestamps
-- RPC functions for balance updates
-- Sample data included
+### PATCH `/api/invoices/:invoiceId`
 
----
-
-## 🔧 Configuration
-
-### Environment Variables
-
-| Variable | Required | Description | Example |
-|----------|----------|-------------|---------|
-| `SUPABASE_URL` | ✅ Yes | Supabase project URL | `https://abc.supabase.co` |
-| `SUPABASE_SERVICE_ROLE_KEY` | ✅ Yes | Service role key (secret) | `eyJhbGci...` |
-| `GEMINI_API_KEY` | ✅ Yes | Google AI API key | `AIzaSyA...` |
-| `FLOW_EVM_RPC` | No | Flow EVM RPC endpoint | `https://testnet.evm...` |
-| `NFT_CONTRACT_ADDRESS` | No | NFT contract address | `0x0000...` |
-| `PORT` | No | Server port | `8001` |
-| `NODE_ENV` | No | Environment | `development` |
-
----
-
-## 🐛 Troubleshooting
-
-### Issue: "Supabase credentials not found"
-**Solution:** Check that `.env` file exists and contains valid `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`
-
-### Issue: "Gemini API key not found"
-**Solution:** Backend will work with mock responses. Add valid `GEMINI_API_KEY` for AI parsing.
-
-### Issue: Database errors
-**Solution:** 
-1. Verify schema was run in Supabase SQL Editor
-2. Check that all tables were created
-3. Verify service_role key (not anon key)
-
-### Issue: CORS errors from frontend
-**Solution:** Backend already configured for CORS. Ensure frontend uses correct backend URL.
-
-### Issue: TypeScript compilation errors
-**Solution:**
-```bash
-rm -rf node_modules dist
-yarn install
-yarn build
+Update an invoice (used after NFT mint to attach token ID and tx hash):
+```json
+{
+  "status": "MINTED",
+  "nft_token_id": "1",
+  "nft_tx_hash": "0xabc...",
+  "due_date": "2026-04-30T00:00:00Z",
+  "chain": "flow-evm-testnet"
+}
 ```
 
 ---
 
-## 🔐 Security Notes
+### POST `/api/chain/record-mint`
 
-### ⚠️ IMPORTANT
-
-1. **Never commit `.env` file** - It contains secrets
-2. **Use service_role key** - Required for server-side operations
-3. **Validate all inputs** - Zod validation is implemented
-4. **Enable RLS in production** - Row Level Security (commented in schema)
-5. **Implement authentication** - Currently skipped for development
-
----
-
-## 🚀 Production Deployment
-
-### Build for Production
-```bash
-yarn build
+Verifies a transaction on Flow EVM, then updates the invoice record in Supabase:
+```json
+{
+  "txHash": "0xabc123...",
+  "tokenId": "1",
+  "invoiceId": "uuid-here",
+  "clientName": "Ramesh",
+  "amount": 5000,
+  "dueDate": "2026-04-30"
+}
 ```
 
-This creates optimized JavaScript in `/dist` folder.
+### GET `/api/chain/token/:tokenId`
 
-### Start Production Server
-```bash
-yarn start
+Fetches both the on-chain `DebtRecord` and the matching Supabase invoice, combining them:
+```json
+{
+  "nft": {
+    "tokenId": 1,
+    "clientName": "Ramesh",
+    "amount": 5000,
+    "status": "ACTIVE",
+    "contractAddress": "0x6fa658...",
+    "txHash": "0xabc...",
+    "debtRecord": { "settled": false, "amountInPaise": 500000, ... }
+  }
+}
 ```
 
-### Environment Setup
-1. Set `NODE_ENV=production` in `.env`
-2. Use production Supabase project
-3. Enable Row Level Security
-4. Implement proper authentication
-5. Set up proper CORS origins
+### GET `/api/chain/tx/:txHash`
 
----
-
-## 📝 Database Schema Overview
-
-### Tables
-- `businesses` - Business entities
-- `clients` - Customer accounts
-- `transactions` - Sales and payments
-- `inventory` - Stock items
-- `invoices` - Generated invoices
-- `chat_messages` - Conversation history
-
-### RPC Functions
-- `increment_client_balance(client_id, amount)`
-- `decrement_client_balance(client_id, amount)`
-- `reset_client_balance(client_id)`
-
----
-
-## 🎨 Integration with Frontend
-
-Frontend expects backend at URL specified in `/app/frontend/.env`:
-```bash
-REACT_APP_BACKEND_URL=http://localhost:8001
+Returns minimal transaction status from Flow EVM:
+```json
+{
+  "transaction": { "status": "SUCCESS", ... },
+  "explorerUrl": "https://evm-testnet.flowscan.io/tx/0xabc..."
+}
 ```
 
-All API calls use `/api` prefix automatically.
+---
+
+## Services
+
+### `GeminiService` (`services/gemini.ts`)
+
+Wraps `@google/generative-ai` and uses **Gemini 2.0 Flash** to parse free-text business commands into structured JSON. Falls back gracefully to keyword-based mock responses when no API key is configured — useful for local development without a key.
+
+The system prompt is purposefully bilingual: it includes Hindi/Hinglish examples and instructs the model to respond in the same language the user wrote in.
+
+### `BlockchainService` (`services/blockchain.ts`)
+
+Uses **ethers.js v6** with a `JsonRpcProvider` pointed at the Flow EVM Testnet RPC. Key capabilities:
+- `verifyTransaction(txHash)` — checks receipt status = 1 (success)
+- `getTransactionDetails(txHash)` — returns raw tx + receipt
+- `getDebtRecord(tokenId)` — reads `debtRecords[tokenId]` mapping from the NFT contract
+- `getExplorerUrl(txHash)` — generates FlowScan link
+
+### `SupabaseService` (`services/supabase.ts`)
+
+A singleton Supabase client initialized with `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY`. Uses the service role (bypasses Row Level Security) — switch to anon key when implementing user-facing auth.
 
 ---
 
-## 📚 Additional Resources
+## Database Schema Summary
 
-- **Supabase Docs:** https://supabase.com/docs
-- **Gemini API Docs:** https://ai.google.dev/docs
-- **Flow EVM Docs:** https://developers.flow.com/evm/using
-- **ethers.js Docs:** https://docs.ethers.org/v6/
+| Table | Key Columns |
+|---|---|
+| `businesses` | `id`, `user_id`, `name`, `wallet_address` |
+| `clients` | `id`, `business_id`, `name`, `total_outstanding` |
+| `transactions` | `id`, `business_id`, `client_id`, `type` (SALE/PAYMENT), `amount`, `items` (JSONB), `status` |
+| `inventory` | `id`, `business_id`, `item_name`, `quantity`, `unit`, `low_stock_threshold` |
+| `invoices` | `id`, `business_id`, `client_id`, `amount`, `status`, `nft_token_id`, `nft_tx_hash`, `chain`, `due_date` |
+| `chat_messages` | `id`, `business_id`, `role`, `content`, `parsed_action` |
 
----
-
-## ✅ Checklist
-
-Before testing with frontend:
-
-- [ ] Supabase project created
-- [ ] Database schema executed successfully
-- [ ] `.env` file created with all credentials
-- [ ] `yarn install` completed
-- [ ] Backend server starts without errors (`yarn dev`)
-- [ ] Health check endpoint returns success
-- [ ] Sample data visible in Supabase dashboard
+See [`schema.sql`](./schema.sql) for full DDL including indexes, triggers, and RPC functions.
 
 ---
 
-## 🆘 Need Help?
+## Development Notes
 
-If you encounter issues:
-
-1. Check backend logs for detailed error messages
-2. Verify all environment variables are set correctly
-3. Test each endpoint individually with curl
-4. Check Supabase dashboard for database issues
-5. Ensure all dependencies are installed
-
----
-
-**Built with 💪 for KhataFlow**
-
-**Happy Coding! 🚀**
+- **Business ID middleware** extracts `business_id` from the `x-business-id` request header (default: `demo-business-001` for demo mode)
+- **Zod validation** is applied to all POST/PATCH request bodies — malformed requests return `400` with descriptive messages
+- **Hot reload** is handled by `ts-node-dev` — it transpiles TypeScript on save and restarts the server automatically
+- The server logs every incoming request with timestamp, method, and path
