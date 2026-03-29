@@ -1,8 +1,7 @@
 import { useEffect, useState } from 'react';
-import { FileText, Download } from 'lucide-react';
-import { formatCurrency } from '../../lib/mockData';
+import { ExternalLink, FileText } from 'lucide-react';
+import { formatCurrency } from '../../lib/formatters';
 import { format } from 'date-fns';
-import { toast } from 'sonner';
 import { fetchJson } from '../../lib/api';
 
 export const InvoiceList = () => {
@@ -26,12 +25,13 @@ export const InvoiceList = () => {
     };
   }, []);
 
-  const handleDownload = (invoiceId) => {
-    toast.success(`Download is not wired yet for ${invoiceId}.`);
-  };
-
   return (
     <div className="space-y-4" data-testid="invoice-list">
+      {invoices.length === 0 && (
+        <div className="bg-khata-surface border-[3px] border-khata-border p-6 text-khata-muted">
+          No invoices found yet. Record a sale in chat to generate one automatically.
+        </div>
+      )}
       {invoices.map((invoice) => (
         <div
           key={invoice.id}
@@ -54,7 +54,9 @@ export const InvoiceList = () => {
                 ${
                   invoice.status === 'PENDING'
                     ? 'border-khata-warning text-khata-warning'
-                    : 'border-khata-accent text-khata-accent'
+                    : invoice.status === 'SETTLED'
+                      ? 'border-khata-muted text-khata-muted'
+                      : 'border-khata-accent text-khata-accent'
                 }
               `}
             >
@@ -95,23 +97,25 @@ export const InvoiceList = () => {
               )}
             </div>
           </div>
-
-          <button
-            onClick={() => handleDownload(invoice.id)}
-            data-testid={`download-invoice-${invoice.id}`}
-            className="
-              mt-4 w-full
-              flex items-center justify-center gap-2 px-4 py-2
-              bg-transparent text-khata-text
-              border-[3px] border-khata-border
-              hover:border-khata-accent hover:text-khata-accent
-              font-bold uppercase tracking-wider text-sm
-              transition-all duration-300
-            "
-          >
-            <Download className="w-4 h-4" />
-            Download PDF
-          </button>
+          {invoice.nft_tx_hash && (
+            <a
+              href={`https://evm-testnet.flowscan.io/tx/${invoice.nft_tx_hash}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="
+                mt-4 w-full
+                flex items-center justify-center gap-2 px-4 py-2
+                bg-transparent text-khata-chain
+                border-[3px] border-khata-chain
+                hover:bg-khata-chain hover:text-white
+                font-bold uppercase tracking-wider text-sm
+                transition-all duration-300
+              "
+            >
+              View On Explorer
+              <ExternalLink className="w-4 h-4" />
+            </a>
+          )}
         </div>
       ))}
     </div>

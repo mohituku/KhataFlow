@@ -8,6 +8,7 @@ import LedgerPage from './pages/LedgerPage';
 import InventoryPage from './pages/InventoryPage';
 import InvoicesPage from './pages/InvoicesPage';
 import ChainPage from './pages/ChainPage';
+import ClientPortalPage from './pages/ClientPortalPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -19,19 +20,22 @@ const queryClient = new QueryClient({
 });
 
 function App() {
+  const withShell = (element) => (
+    <AppShell>{element}</AppShell>
+  );
+
   return (
     <QueryClientProvider client={queryClient}>
       <BrowserRouter>
         <div className="App">
-          <AppShell>
-            <Routes>
-              <Route path="/" element={<ChatPage />} />
-              <Route path="/ledger" element={<LedgerPage />} />
-              <Route path="/inventory" element={<InventoryPage />} />
-              <Route path="/invoices" element={<InvoicesPage />} />
-              <Route path="/chain" element={<ChainPage />} />
-            </Routes>
-          </AppShell>
+          <Routes>
+            <Route path="/client/:businessId/:clientId" element={<ClientPortalPage />} />
+            <Route path="/" element={withShell(<ChatPage />)} />
+            <Route path="/ledger" element={withShell(<LedgerPage />)} />
+            <Route path="/inventory" element={withShell(<InventoryPage />)} />
+            <Route path="/invoices" element={withShell(<InvoicesPage />)} />
+            <Route path="/chain" element={withShell(<ChainPage />)} />
+          </Routes>
           <Toaster
             position="top-right"
             toastOptions={{

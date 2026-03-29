@@ -1,36 +1,110 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, Clock, CheckCircle } from 'lucide-react';
-import { formatCurrency } from '../../lib/mockData';
+import { ExternalLink, Clock, CheckCircle, Loader2 } from 'lucide-react';
+import { ethers } from 'ethers';
+import { formatCurrency } from '../../lib/formatters';
 import { format } from 'date-fns';
 import { MintModal } from './MintModal';
 import { fetchJson } from '../../lib/api';
+import { CONTRACTS, ZERO_ADDRESS } from '../../lib/contracts';
+import { useWalletStore } from '../../store/useWalletStore';
+import { toast } from 'sonner';
 
 export const NFTList = () => {
   const [showMintModal, setShowMintModal] = useState(false);
   const [nfts, setNfts] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [settlingTokenId, setSettlingTokenId] = useState(null);
+  const { signer } = useWalletStore();
 
   const loadNfts = async () => {
     setLoading(true);
 
     try {
-      const data = await fetchJson('/api/invoices?status=MINTED');
-      setNfts(
-        (data.invoices || []).map((invoice) => ({
-          tokenId: invoice.nft_token_id,
-          clientName: invoice.clients?.name || 'Unknown Client',
-          amount: Number(invoice.amount || 0),
-          status: 'ACTIVE',
-          invoiceId: invoice.id,
-          txHash: invoice.nft_tx_hash,
-          dueDate: invoice.due_date
-        }))
+      const data = await fetchJson('/api/invoices');
+      const invoices = (data.invoices || []).filter((invoice) => (
+        invoice.nft_token_id || invoice.status === 'MINTED' || invoice.status === 'SETTLED'
+      ));
+      const enrichedNfts = await Promise.all(
+        invoices.map(async (invoice) => {
+          let status = invoice.status === 'SETTLED' ? 'SETTLED' : 'ACTIVE';
+
+          if (invoice.nft_token_id) {
+            try {
+              const tokenData = await fetchJson(`/api/chain/token/${invoice.nft_token_id}`);
+              if (tokenData?.nft?.status === 'SETTLED') {
+                status = 'SETTLED';
+              }
+            } catch (error) {
+              console.error(`Failed to refresh token ${invoice.nft_token_id}:`, error);
+            }
+          }
+
+          return {
+            tokenId: invoice.nft_token_id,
+            clientName: invoice.clients?.name || 'Unknown Client',
+            amount: Number(invoice.amount || 0),
+            status,
+            invoiceId: invoice.id,
+            txHash: invoice.nft_tx_hash,
+            dueDate: invoice.due_date
+          };
+        })
       );
+
+      setNfts(enrichedNfts);
     } catch (error) {
       console.error('Failed to load NFTs:', error);
       setNfts([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSettleOnChain = async (nft) => {
+    if (!signer) {
+      toast.error('Connect your wallet first');
+      return;
+    }
+
+    if (!nft.tokenId) {
+      toast.error('Token ID is missing for this NFT');
+      return;
+    }
+
+    if (!Array.isArray(CONTRACTS.NFT.abi) || CONTRACTS.NFT.abi.length === 0) {
+      toast.error('NFT ABI is not configured');
+      return;
+    }
+
+    if (!CONTRACTS.NFT.address || CONTRACTS.NFT.address === ZERO_ADDRESS) {
+      toast.error('NFT contract address is not configured');
+      return;
+    }
+
+    setSettlingTokenId(nft.tokenId);
+
+    try {
+      const contract = new ethers.Contract(CONTRACTS.NFT.address, CONTRACTS.NFT.abi, signer);
+      const tx = await contract.settleDebt(BigInt(nft.tokenId));
+      await tx.wait(1);
+
+      await fetchJson('/api/chain/settle', {
+        method: 'POST',
+        body: JSON.stringify({
+          tokenId: String(nft.tokenId),
+          invoiceId: nft.invoiceId
+        })
+      });
+
+      toast.success('Debt settled on-chain');
+      await loadNfts();
+    } catch (error) {
+      console.error('Failed to settle NFT on-chain:', error);
+      toast.error('Failed to settle NFT', {
+        description: error.message
+      });
+    } finally {
+      setSettlingTokenId(null);
     }
   };
 
@@ -114,26 +188,50 @@ export const NFTList = () => {
                     Invoice: <span className="text-khata-text">{nft.invoiceId}</span>
                   </p>
                 </div>
-                {nft.txHash ? (
-                  <a
-                    href={`https://evm-testnet.flowscan.io/tx/${nft.txHash}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    data-testid={`explorer-link-${nft.tokenId || nft.invoiceId}`}
-                    className="
-                      flex items-center gap-2 px-3 py-1
-                      text-xs font-bold uppercase tracking-wider
-                      text-khata-chain border-[2px] border-khata-chain
-                      hover:bg-khata-chain hover:text-white
-                      transition-all duration-200
-                    "
-                  >
-                    View on Explorer
-                    <ExternalLink className="w-3 h-3" />
-                  </a>
-                ) : (
-                  <span className="text-xs text-khata-muted">Explorer link pending</span>
-                )}
+                <div className="flex items-center gap-2">
+                  {nft.status === 'ACTIVE' && (
+                    <button
+                      onClick={() => handleSettleOnChain(nft)}
+                      disabled={settlingTokenId === nft.tokenId}
+                      data-testid={`settle-nft-${nft.tokenId || nft.invoiceId}`}
+                      className="
+                        flex items-center gap-2 px-3 py-1
+                        text-xs font-bold uppercase tracking-wider
+                        text-khata-accent border-[2px] border-khata-accent
+                        hover:bg-khata-accent hover:text-khata-bg
+                        transition-all duration-200
+                        disabled:opacity-50 disabled:cursor-not-allowed
+                      "
+                    >
+                      {settlingTokenId === nft.tokenId ? (
+                        <Loader2 className="w-3 h-3 animate-spin" />
+                      ) : (
+                        <CheckCircle className="w-3 h-3" />
+                      )}
+                      {settlingTokenId === nft.tokenId ? 'Settling...' : 'Settle On-Chain'}
+                    </button>
+                  )}
+                  {nft.txHash ? (
+                    <a
+                      href={`https://evm-testnet.flowscan.io/tx/${nft.txHash}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      data-testid={`explorer-link-${nft.tokenId || nft.invoiceId}`}
+                      className="
+                        flex items-center gap-2 px-3 py-1
+                        text-xs font-bold uppercase tracking-wider
+                        text-khata-chain border-[2px] border-khata-chain
+                        hover:bg-khata-chain hover:text-white
+                        transition-all duration-200
+                      "
+                    >
+                      View on Explorer
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  ) : (
+                    <span className="text-xs text-khata-muted">Explorer link pending</span>
+                  )}
+                </div>
               </div>
             </div>
           ))

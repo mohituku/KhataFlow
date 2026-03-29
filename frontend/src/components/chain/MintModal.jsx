@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Loader2 } from 'lucide-react';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../ui/dialog';
-import { formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/formatters';
 import { useMintNFT } from '../../hooks/useMintNFT';
 import { fetchJson, getBusinessId } from '../../lib/api';
 import { toast } from 'sonner';

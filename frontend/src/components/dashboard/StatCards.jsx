@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { TrendingUp, AlertCircle, Wallet, Users } from 'lucide-react';
-import { formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/formatters';
 import { fetchJson } from '../../lib/api';
 
 export const StatCards = () => {

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Coins } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/formatters';
 import { fetchJson } from '../../lib/api';
 import { toast } from 'sonner';
 

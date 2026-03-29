@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Check, X } from 'lucide-react';
-import { formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/formatters';
 import { toast } from 'sonner';
 
 function getActionTitle(action) {

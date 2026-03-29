@@ -1,9 +1,10 @@
 import { useEffect, useState } from 'react';
-import { Eye, Coins } from 'lucide-react';
+import { Eye, Coins, Share2 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { formatCurrency } from '../../lib/mockData';
+import { formatCurrency } from '../../lib/formatters';
 import { format } from 'date-fns';
-import { fetchJson } from '../../lib/api';
+import { fetchJson, getBusinessId } from '../../lib/api';
+import { toast } from 'sonner';
 import {
   Dialog,
   DialogContent,
@@ -65,6 +66,33 @@ export const ClientTable = () => {
     }
   };
 
+  const shareClientPortal = async (client) => {
+    const businessId = getBusinessId();
+    const url = `${window.location.origin}/client/${businessId}/${client.id}`;
+
+    try {
+      if (navigator.share) {
+        await navigator.share({
+          title: `${client.name}'s KhataFlow account`,
+          url
+        });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(url);
+        toast.success('Client portal link copied', {
+          description: `Share it with ${client.name}`
+        });
+      } else {
+        throw new Error('Share is not supported on this device');
+      }
+    } catch (error) {
+      if (error?.name !== 'AbortError') {
+        toast.error('Failed to share client portal', {
+          description: error.message
+        });
+      }
+    }
+  };
+
   return (
     <>
       <div className="border-[3px] border-khata-border overflow-hidden bg-khata-surface" data-testid="client-table">
@@ -106,7 +134,7 @@ export const ClientTable = () => {
                     : 'No transactions'}
                 </p>
               </div>
-              <div className="col-span-3 flex gap-2">
+              <div className="col-span-3 flex gap-2 flex-wrap">
                 <button
                   onClick={() => handleViewClient(client)}
                   data-testid={`view-client-btn-${client.id}`}
@@ -138,6 +166,22 @@ export const ClientTable = () => {
                 >
                   <Coins className="w-3 h-3" />
                   Mint
+                </button>
+                <button
+                  onClick={() => shareClientPortal(client)}
+                  data-testid={`share-client-portal-${client.id}`}
+                  className="
+                    px-3 py-1 text-xs
+                    bg-transparent text-khata-text
+                    border-[2px] border-khata-border
+                    hover:border-khata-accent hover:text-khata-accent
+                    font-bold uppercase tracking-wider
+                    transition-all duration-200
+                    flex items-center gap-1
+                  "
+                >
+                  <Share2 className="w-3 h-3" />
+                  Share
                 </button>
               </div>
             </div>
