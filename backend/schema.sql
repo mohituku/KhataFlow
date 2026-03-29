@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS invoices (
   business_id TEXT NOT NULL,
   client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
   amount NUMERIC NOT NULL,
-  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'MINTED')),
+  status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'MINTED', 'SETTLED')),
   items JSONB,
   nft_token_id TEXT,
   nft_tx_hash TEXT,
@@ -87,6 +87,19 @@ CREATE TABLE IF NOT EXISTS chat_messages (
   created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Client payment confirmations table
+CREATE TABLE IF NOT EXISTS payment_confirmations (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  business_id TEXT NOT NULL,
+  client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+  amount NUMERIC NOT NULL,
+  note TEXT,
+  status TEXT NOT NULL DEFAULT 'PENDING_CONFIRMATION'
+    CHECK (status IN ('PENDING_CONFIRMATION', 'CONFIRMED', 'REJECTED')),
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ============================================
 -- INDEXES
 -- ============================================
@@ -101,6 +114,9 @@ CREATE INDEX IF NOT EXISTS idx_invoices_business_id ON invoices(business_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_client_id ON invoices(client_id);
 CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);
 CREATE INDEX IF NOT EXISTS idx_chat_messages_business_id ON chat_messages(business_id);
+CREATE INDEX IF NOT EXISTS idx_payment_confirmations_business_id ON payment_confirmations(business_id);
+CREATE INDEX IF NOT EXISTS idx_payment_confirmations_client_id ON payment_confirmations(client_id);
+CREATE INDEX IF NOT EXISTS idx_payment_confirmations_status ON payment_confirmations(status);
 
 -- ============================================
 -- RPC FUNCTIONS
@@ -185,34 +201,8 @@ CREATE TRIGGER update_inventory_updated_at BEFORE UPDATE ON inventory
 CREATE TRIGGER update_invoices_updated_at BEFORE UPDATE ON invoices
   FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
--- ============================================
--- SAMPLE DATA (Optional - for testing)
--- ============================================
-
--- Insert sample business
-INSERT INTO businesses (id, name, wallet_address)
-VALUES (uuid_generate_v4(), 'Demo Kirana Store', '0x0000000000000000000000000000000000000000')
-ON CONFLICT DO NOTHING;
-
--- Insert sample clients
-INSERT INTO clients (business_id, name, total_outstanding) VALUES
-  ('demo-business-001', 'Ramesh Kumar', 4500),
-  ('demo-business-001', 'Priya Sharma', 2300),
-  ('demo-business-001', 'Suresh Patel', 6700),
-  ('demo-business-001', 'Meena Devi', 1200)
-ON CONFLICT (business_id, name) DO NOTHING;
-
--- Insert sample inventory
-INSERT INTO inventory (business_id, item_name, quantity, unit, low_stock_threshold) VALUES
-  ('demo-business-001', 'Rice', 150, 'kg', 20),
-  ('demo-business-001', 'Wheat Flour', 85, 'kg', 15),
-  ('demo-business-001', 'Dal (Toor)', 15, 'kg', 10),
-  ('demo-business-001', 'Oil', 45, 'L', 10),
-  ('demo-business-001', 'Sugar', 8, 'kg', 10),
-  ('demo-business-001', 'Salt', 35, 'kg', 10),
-  ('demo-business-001', 'Tea', 25, 'kg', 5),
-  ('demo-business-001', 'Milk Powder', 12, 'kg', 8)
-ON CONFLICT (business_id, item_name) DO NOTHING;
+CREATE TRIGGER update_payment_confirmations_updated_at BEFORE UPDATE ON payment_confirmations
+  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ============================================
 -- ROW LEVEL SECURITY (Optional)
@@ -246,7 +236,7 @@ SETUP INSTRUCTIONS:
 5. Click "Run" to execute
 
 IMPORTANT:
-- This schema uses 'demo-business-001' as the demo business_id
+- Seed your own business, clients, inventory, and invoices after running the schema
 - In production, you should implement proper authentication
 - Update business_id to reference actual business UUIDs
 - Enable Row Level Security (RLS) for production

@@ -6,6 +6,7 @@ import ledgerRouter from './routes/ledger';
 import inventoryRouter from './routes/inventory';
 import invoicesRouter from './routes/invoices';
 import chainRouter from './routes/chain';
+import clientRouter from './routes/client';
 import { businessIdMiddleware } from './middleware/businessId';
 
 const app: Application = express();
@@ -43,6 +44,7 @@ app.use('/api/ledger', ledgerRouter);
 app.use('/api/inventory', inventoryRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/chain', chainRouter);
+app.use('/api/client', clientRouter);
 
 // Root route
 app.get('/api', (req: Request, res: Response) => {
@@ -59,7 +61,9 @@ app.get('/api', (req: Request, res: Response) => {
       'GET /api/invoices',
       'POST /api/invoices',
       'POST /api/chain/record-mint',
-      'GET /api/chain/token/:tokenId'
+      'GET /api/chain/token/:tokenId',
+      'GET /api/client/:businessId/:clientId',
+      'POST /api/client/:businessId/:clientId/confirm-payment'
     ]
   });
 });

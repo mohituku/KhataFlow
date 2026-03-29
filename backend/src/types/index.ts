@@ -57,7 +57,7 @@ export interface Invoice {
   business_id: string;
   client_id: string;
   amount: number;
-  status: 'PENDING' | 'MINTED';
+  status: 'PENDING' | 'MINTED' | 'SETTLED';
   items?: any;
   nft_token_id?: string;
   created_at: string;

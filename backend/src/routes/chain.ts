@@ -67,6 +67,42 @@ router.post('/record-mint', async (req: Request, res: Response): Promise<void> =
   }
 });
 
+const settleSchema = z.object({
+  tokenId: z.string().min(1),
+  invoiceId: z.string().uuid().optional()
+});
+
+router.post('/settle', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const businessId = getBusinessId(req);
+    const { tokenId, invoiceId } = settleSchema.parse(req.body);
+
+    let query = supabase
+      .from('invoices')
+      .update({ status: 'SETTLED' })
+      .eq('business_id', businessId)
+      .eq('nft_token_id', tokenId);
+
+    if (invoiceId) {
+      query = query.eq('id', invoiceId);
+    }
+
+    const { data, error } = await query.select().single();
+
+    if (error) {
+      throw error;
+    }
+
+    res.json({
+      success: true,
+      invoice: data
+    });
+  } catch (error: any) {
+    console.error('Settle NFT error:', error);
+    res.status(400).json({ success: false, error: error.message || 'Failed to settle NFT' });
+  }
+});
+
 // Get NFT token details
 router.get('/token/:tokenId', async (req: Request, res: Response): Promise<void> => {
   try {

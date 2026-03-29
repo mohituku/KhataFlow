@@ -43,6 +43,8 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         dbResult = null;
     }
 
+    action.response = buildAssistantResponse(action, dbResult, message);
+
     res.json({
       success: true,
       action,
@@ -109,13 +111,27 @@ async function handleAddSale(action: any, businessId: string) {
 
     if (txnError) throw txnError;
 
+    const { data: invoice, error: invoiceError } = await supabase
+      .from('invoices')
+      .insert({
+        business_id: businessId,
+        client_id: client.id,
+        amount: totalAmount,
+        items: action.items || [],
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+
+    if (invoiceError) throw invoiceError;
+
     // Update client outstanding balance
     await supabase.rpc('increment_client_balance', {
       p_client_id: client.id,
       p_amount: totalAmount
     });
 
-    return { client, transaction: txn };
+    return { client, transaction: txn, invoice };
   } catch (error) {
     console.error('Add sale error:', error);
     return { error: 'Failed to add sale' };
@@ -161,7 +177,27 @@ async function handleUpdateStock(action: any, businessId: string) {
 async function handleQueryLedger(action: any, businessId: string) {
   try {
     if (!action.clientName) {
-      return { error: 'Client name not provided' };
+      const { data: clients, error } = await supabase
+        .from('clients')
+        .select('id, name, total_outstanding')
+        .eq('business_id', businessId)
+        .gt('total_outstanding', 0)
+        .order('total_outstanding', { ascending: false });
+
+      if (error) throw error;
+
+      const totalOutstanding = (clients || []).reduce(
+        (sum, client) => sum + Number(client.total_outstanding || 0),
+        0
+      );
+
+      return {
+        summary: {
+          totalOutstanding,
+          totalClients: clients?.length || 0,
+          clients: clients || []
+        }
+      };
     }
 
     const { data, error } = await supabase
@@ -231,11 +267,103 @@ async function handleMarkPaid(action: any, businessId: string) {
       p_amount: paymentAmount
     });
 
-    return { settled: true, amount: paymentAmount };
+    return {
+      settled: true,
+      amount: paymentAmount,
+      clientName: client.name,
+      remainingBalance: Math.max(Number(client.total_outstanding || 0) - Number(paymentAmount), 0)
+    };
   } catch (error) {
     console.error('Mark paid error:', error);
     return { error: 'Failed to mark payment' };
   }
+}
+
+function buildAssistantResponse(action: any, dbResult: any, originalMessage: string) {
+  if (dbResult?.error) {
+    return toHinglishError(dbResult.error);
+  }
+
+  switch (action.intent) {
+    case 'ADD_SALE': {
+      const clientName = dbResult?.client?.name || action.clientName || 'client';
+      const amount = Number(action.totalAmount || dbResult?.transaction?.amount || 0);
+      const previousOutstanding = Number(dbResult?.client?.total_outstanding || 0);
+      const newOutstanding = previousOutstanding + amount;
+      return `${clientName} ka ₹${formatInr(amount)} udhar add kar diya. Naya balance ₹${formatInr(newOutstanding)} hai, aur invoice bhi create ho gaya.`;
+    }
+    case 'MARK_PAID': {
+      const clientName = dbResult?.clientName || action.clientName || 'client';
+      const amount = Number(dbResult?.amount || action.paymentAmount || 0);
+      const remainingBalance = Number(dbResult?.remainingBalance || 0);
+      return `${clientName} se ₹${formatInr(amount)} payment record kar diya. Remaining balance ₹${formatInr(remainingBalance)} hai.`;
+    }
+    case 'UPDATE_STOCK': {
+      const count = Array.isArray(dbResult?.updatedItems) ? dbResult.updatedItems.length : 0;
+      if (count === 0) {
+        return 'Inventory request samajh aayi, lekin koi item update nahi hua.';
+      }
+      const itemNames = dbResult.updatedItems
+        .slice(0, 3)
+        .map((item: any) => item.item_name)
+        .join(', ');
+      return `Inventory update ho gaya. ${count} item save kiye: ${itemNames}.`;
+    }
+    case 'QUERY_LEDGER': {
+      if (dbResult?.summary) {
+        const total = Number(dbResult.summary.totalOutstanding || 0);
+        const clients = Array.isArray(dbResult.summary.clients) ? dbResult.summary.clients : [];
+
+        if (clients.length === 0) {
+          return 'Abhi kisi client se koi udhar lena baaki nahi hai.';
+        }
+
+        const topClients = clients
+          .slice(0, 5)
+          .map((client: any) => `${client.name}: ₹${formatInr(client.total_outstanding)}`)
+          .join(', ');
+
+        return `Aapko total ₹${formatInr(total)} lena hai. Top outstanding clients: ${topClients}.`;
+      }
+
+      if (dbResult?.client) {
+        const clientName = dbResult.client.name;
+        const totalOutstanding = Number(dbResult.client.total_outstanding || 0);
+        const recentTransactions = Array.isArray(dbResult.transactions) ? dbResult.transactions.length : 0;
+        return `${clientName} se aapko ₹${formatInr(totalOutstanding)} lena hai. Recent entries ${recentTransactions} hain.`;
+      }
+
+      return 'Ledger details mil gayi, lekin summary bana nahi paaya.';
+    }
+    default:
+      return action.response || getDefaultUnknownResponse(originalMessage);
+  }
+}
+
+function toHinglishError(error: string) {
+  if (error.includes('Client not found')) {
+    return 'Client nahi mila. Naam thoda aur clearly batao.';
+  }
+
+  if (error.includes('Client name not provided')) {
+    return 'Client ka naam missing hai. Naam ke saath dobara bolo.';
+  }
+
+  if (error.includes('Payment amount exceeds outstanding balance')) {
+    return 'Payment outstanding balance se zyada hai. Amount check karo.';
+  }
+
+  return error;
+}
+
+function getDefaultUnknownResponse(message: string) {
+  return `Main "${message}" ko clearly sale, payment, stock update, ya ledger query me map nahi kar paaya. Client name aur amount ke saath dobara bolo.`;
+}
+
+function formatInr(value: number | string) {
+  return new Intl.NumberFormat('en-IN', {
+    maximumFractionDigits: 0
+  }).format(Number(value || 0));
 }
 
 export default router;

@@ -93,4 +93,24 @@ router.patch('/:itemId', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+router.delete('/:itemId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const businessId = getBusinessId(req);
+    const { itemId } = req.params;
+
+    const { error } = await supabase
+      .from('inventory')
+      .delete()
+      .eq('business_id', businessId)
+      .eq('id', itemId);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Delete inventory item error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 export default router;
