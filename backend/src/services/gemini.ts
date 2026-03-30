@@ -188,28 +188,31 @@ Output:
 class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
   private modelNames: string[] = [];
-  private emergentKey: string | null = null;
-  private activeProvider: 'emergent' | 'gemini' | null = null;
+  private fallbackKey: string | null = null;
+  private activeProvider: 'fallback' | 'gemini' | null = null;
 
   constructor() {
-    this.emergentKey = (process.env.EMERGENT_LLM_KEY || '').trim() || null;
+    this.fallbackKey =
+      (process.env.FALLBACK_GEMINI_API_KEY || '').trim() ||
+      (process.env.EMERGENT_LLM_KEY || '').trim() ||
+      null;
     const userApiKey = (process.env.GEMINI_API_KEY || '').trim() || null;
 
     const providers: Array<{
-      name: 'emergent' | 'gemini';
+      name: 'fallback' | 'gemini';
       key: string | null;
       modelNames: string[];
       label: string;
     }> = [
       {
-        name: 'emergent',
-        key: this.emergentKey,
+        name: 'fallback',
+        key: this.fallbackKey,
         modelNames: [
           'gemini-2.0-flash-exp',
           'gemini-1.5-flash',
           'gemini-1.5-pro'
         ],
-        label: 'Emergent LLM key'
+        label: 'Fallback Gemini key'
       },
       {
         name: 'gemini',
@@ -250,7 +253,7 @@ class GeminiService {
       checkpoint: this.genAI && this.modelNames.length > 0 ? 'gemini-ready' : 'gemini-mock-fallback',
       activeProvider: this.activeProvider,
       keySources: {
-        emergent: Boolean(this.emergentKey),
+        fallback: Boolean(this.fallbackKey),
         gemini: Boolean((process.env.GEMINI_API_KEY || '').trim())
       },
       modelCandidates: this.modelNames

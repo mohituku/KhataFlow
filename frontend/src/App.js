@@ -10,6 +10,7 @@ import InventoryPage from './pages/InventoryPage';
 import InvoicesPage from './pages/InvoicesPage';
 import ChainPage from './pages/ChainPage';
 import ClientPortalPage from './pages/ClientPortalPage';
+import PaymentPage from './pages/PaymentPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -32,6 +33,7 @@ function App() {
           <Routes>
             <Route path="/client/:businessId/:clientId" element={<ClientPortalPage />} />
             <Route path="/client/:clientId" element={<ClientPortalPage />} />
+            <Route path="/pay/:clientId" element={<PaymentPage />} />
             <Route path="/" element={withShell(<ChatPage />)} />
             <Route path="/clients" element={withShell(<ClientsPage />)} />
             <Route path="/ledger" element={withShell(<LedgerPage />)} />

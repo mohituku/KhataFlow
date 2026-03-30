@@ -7,21 +7,44 @@ import inventoryRouter from './routes/inventory';
 import invoicesRouter from './routes/invoices';
 import chainRouter from './routes/chain';
 import clientRouter from './routes/client';
-import { businessIdMiddleware } from './middleware/businessId';
+import qrRouter from './routes/qr';
+import paymentRouter from './routes/payment';
+import { walletAuthMiddleware } from './middleware/walletAuth';
 import { geminiService } from './services/gemini';
+import { launchTelegramBots } from './services/telegram';
+import { adminBot, clientBot } from './services/telegram';
+import { setTelegramBots } from './services/notifications';
 
 const app: Application = express();
 const PORT = process.env.PORT || 8001;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+
+function getCorsOrigins() {
+  const configuredOrigins = (process.env.CORS_ORIGINS || '')
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (configuredOrigins.length > 0 && !configuredOrigins.includes('*')) {
+    return configuredOrigins;
+  }
+
+  if (NODE_ENV !== 'production') {
+    return ['http://localhost:3000'];
+  }
+
+  throw new Error('CORS_ORIGINS must be configured in production and cannot be "*"');
+}
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGINS || '*',
+  origin: getCorsOrigins(),
   credentials: true
 }));
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
-app.use(businessIdMiddleware);
+app.use(walletAuthMiddleware);
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -56,6 +79,8 @@ app.use('/api/inventory', inventoryRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/chain', chainRouter);
 app.use('/api/client', clientRouter);
+app.use('/api/qr', qrRouter);
+app.use('/api/payment', paymentRouter);
 
 // Root route
 app.get('/api', (req: Request, res: Response) => {
@@ -109,6 +134,15 @@ app.listen(PORT, () => {
   const aiStatus = geminiService.getStatus();
   console.log(`   - Gemini AI: ${aiStatus.configured ? `✅ ${aiStatus.activeProvider || 'configured'} (${aiStatus.checkpoint})` : `❌ Not configured (${aiStatus.checkpoint})`}`);
   console.log(`   - Flow EVM: ${process.env.FLOW_EVM_RPC || 'https://testnet.evm.nodes.onflow.org'}`);
+  
+  // Initialize Telegram bots
+  if (process.env.TELEGRAM_ADMIN_BOT_TOKEN && process.env.TELEGRAM_CLIENT_BOT_TOKEN) {
+    setTelegramBots(adminBot, clientBot);
+    launchTelegramBots();
+  } else {
+    console.log(`   - Telegram: ⚠️  Bot tokens not configured`);
+  }
+  
   console.log('\n');
 });
 

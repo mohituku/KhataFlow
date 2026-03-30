@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import { blockchainService } from '../services/blockchain';
 import { supabase } from '../services/supabase';
 import { z } from 'zod';
-import { getBusinessId } from '../middleware/businessId';
+import { getBusinessId } from '../middleware/walletAuth';
 
 const router = Router();
 

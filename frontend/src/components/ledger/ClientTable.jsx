@@ -70,9 +70,10 @@ export const ClientTable = () => {
   };
 
   const shareClientPortal = async (client) => {
-    const url = `${window.location.origin}/client/${client.id}`;
-
     try {
+      const payload = await fetchJson(`/api/client/share-link/${client.id}`);
+      const url = payload.portalUrl;
+
       if (navigator.share) {
         await navigator.share({
           title: `${client.name}'s KhataFlow account`,

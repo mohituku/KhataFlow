@@ -1,27 +1,21 @@
+import { useWalletStore } from '../store/useWalletStore';
+
 export const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || 'http://localhost:8001';
-export const BUSINESS_ID_STORAGE_KEY = 'khataflow-business-id';
-export const DEFAULT_BUSINESS_ID = 'demo-business-001';
-
-export function getBusinessId() {
-  if (typeof window === 'undefined') {
-    return DEFAULT_BUSINESS_ID;
-  }
-
-  const stored = window.localStorage.getItem(BUSINESS_ID_STORAGE_KEY);
-  if (stored) {
-    return stored;
-  }
-
-  window.localStorage.setItem(BUSINESS_ID_STORAGE_KEY, DEFAULT_BUSINESS_ID);
-  return DEFAULT_BUSINESS_ID;
-}
 
 export function buildApiHeaders(extraHeaders = {}) {
+  // Get wallet address from Zustand store directly (outside React)
+  const { address } = useWalletStore.getState();
+  
   return {
     'Content-Type': 'application/json',
-    'x-business-id': getBusinessId(),
+    ...(address ? { 'x-wallet-address': address } : {}),
     ...extraHeaders
   };
+}
+
+export function getBusinessId() {
+  const { address } = useWalletStore.getState();
+  return address || '';
 }
 
 export function getApiUrl(path) {

@@ -1,6 +1,8 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
 import { supabase } from '../services/supabase';
+import { getBusinessId } from '../middleware/walletAuth';
+import { getClientAccessUrls, verifyClientAccessToken } from '../services/signedLinks';
 
 const router = Router();
 
@@ -8,6 +10,37 @@ const confirmPaymentSchema = z.object({
   amount: z.number().positive(),
   note: z.string().max(500).optional().default('')
 });
+
+function extractClientAccessToken(req: Request) {
+  const headerToken = req.headers['x-client-access-token'];
+  if (typeof headerToken === 'string' && headerToken.trim()) {
+    return headerToken.trim();
+  }
+
+  const queryToken = req.query.token;
+  if (typeof queryToken === 'string' && queryToken.trim()) {
+    return queryToken.trim();
+  }
+
+  const bodyToken = req.body?.token;
+  if (typeof bodyToken === 'string' && bodyToken.trim()) {
+    return bodyToken.trim();
+  }
+
+  return null;
+}
+
+function assertClientAccess(req: Request, businessId: string, clientId: string) {
+  const token = extractClientAccessToken(req);
+  if (!token) {
+    const error: any = new Error('Signed client access token is required');
+    error.statusCode = 401;
+    throw error;
+  }
+
+  verifyClientAccessToken(token, businessId, clientId);
+  return token;
+}
 
 function getFallbackBusinessName(businessId: string) {
   if (businessId === 'demo-business-001') {
@@ -103,6 +136,39 @@ async function buildClientPortalPayload(businessId: string, clientId: string) {
   };
 }
 
+router.get('/share-link/:clientId', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const businessId = getBusinessId(req);
+    const clientId = Array.isArray(req.params.clientId) ? req.params.clientId[0] : req.params.clientId;
+
+    const { data: client, error } = await supabase
+      .from('clients')
+      .select('id, business_id')
+      .eq('business_id', businessId)
+      .eq('id', clientId)
+      .single();
+
+    if (error || !client) {
+      throw error || new Error('Client not found');
+    }
+
+    const access = getClientAccessUrls(client.business_id, client.id);
+
+    res.json({
+      success: true,
+      clientId: client.id,
+      businessId: client.business_id,
+      ...access
+    });
+  } catch (error: any) {
+    console.error('Create share link error:', error);
+    res.status(404).json({
+      success: false,
+      error: error.message || 'Failed to create client share link'
+    });
+  }
+});
+
 router.get('/lookup/:clientId', async (req: Request, res: Response): Promise<void> => {
   try {
     const clientId = Array.isArray(req.params.clientId) ? req.params.clientId[0] : req.params.clientId;
@@ -117,13 +183,14 @@ router.get('/lookup/:clientId', async (req: Request, res: Response): Promise<voi
       throw error || new Error('Client not found');
     }
 
+    assertClientAccess(req, client.business_id, client.id);
     const payload = await buildClientPortalPayload(client.business_id, client.id);
     res.json(payload);
   } catch (error: any) {
     console.error('Lookup client portal error:', error);
-    res.status(404).json({
+    res.status(error.statusCode || 404).json({
       success: false,
-      error: 'Client account not found'
+      error: error.message || 'Client account not found'
     });
   }
 });
@@ -132,13 +199,14 @@ router.get('/:businessId/:clientId', async (req: Request, res: Response): Promis
   try {
     const businessId = Array.isArray(req.params.businessId) ? req.params.businessId[0] : req.params.businessId;
     const clientId = Array.isArray(req.params.clientId) ? req.params.clientId[0] : req.params.clientId;
+    assertClientAccess(req, businessId, clientId);
     const payload = await buildClientPortalPayload(businessId, clientId);
     res.json(payload);
   } catch (error: any) {
     console.error('Get client portal error:', error);
-    res.status(404).json({
+    res.status(error.statusCode || 404).json({
       success: false,
-      error: 'Client account not found'
+      error: error.message || 'Client account not found'
     });
   }
 });
@@ -147,6 +215,7 @@ router.post('/:businessId/:clientId/confirm-payment', async (req: Request, res: 
   try {
     const businessId = Array.isArray(req.params.businessId) ? req.params.businessId[0] : req.params.businessId;
     const clientId = Array.isArray(req.params.clientId) ? req.params.clientId[0] : req.params.clientId;
+    assertClientAccess(req, businessId, clientId);
     const { amount, note } = confirmPaymentSchema.parse(req.body);
 
     const { data: client, error: clientError } = await supabase
@@ -183,7 +252,7 @@ router.post('/:businessId/:clientId/confirm-payment', async (req: Request, res: 
     });
   } catch (error: any) {
     console.error('Confirm client payment error:', error);
-    res.status(400).json({
+    res.status(error.statusCode || 400).json({
       success: false,
       error: error.message || 'Failed to send payment confirmation'
     });

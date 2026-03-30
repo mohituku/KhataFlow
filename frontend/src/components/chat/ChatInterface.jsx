@@ -3,10 +3,12 @@ import { useAppStore } from '../../store/useAppStore';
 import { ChatMessage } from './ChatMessage';
 import { ChatInput } from './ChatInput';
 import { Bot } from 'lucide-react';
+import { useAgent } from '../../hooks/useAgent';
 
 export const ChatInterface = () => {
   const { conversationHistory } = useAppStore();
   const messagesEndRef = useRef(null);
+  const { sendMessage, isLoading } = useAgent();
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -41,6 +43,11 @@ export const ChatInterface = () => {
                 <div
                   key={i}
                   className="p-3 bg-khata-surface border-[2px] border-khata-border hover:border-khata-accent transition-colors duration-200 cursor-pointer"
+                  onClick={() => {
+                    if (!isLoading) {
+                      void sendMessage(example);
+                    }
+                  }}
                 >
                   <p className="text-sm text-khata-text">{example}</p>
                 </div>

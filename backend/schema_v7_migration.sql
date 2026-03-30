@@ -1,0 +1,8 @@
+-- KhataFlow V7 note
+-- This release now targets a fresh database bootstrap via backend/schema.sql.
+-- The previous migration strategy changed businesses.id to TEXT and is no longer valid.
+--
+-- Action:
+-- 1. Create a fresh Supabase database (or reset the existing one).
+-- 2. Run backend/schema.sql as the canonical V7 schema.
+-- 3. Seed business/client data again after the wallet-auth bootstrap creates businesses.
