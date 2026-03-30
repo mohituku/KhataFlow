@@ -8,8 +8,11 @@
 .env
 */.env
 *.env
+*.env.vercel
 /frontend/.env
 /backend/.env
+/frontend/.env.vercel
+/backend/.env.vercel
 
 
 # Dependencies
