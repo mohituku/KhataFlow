@@ -3,7 +3,7 @@ import { message } from 'telegraf/filters';
 import { geminiService } from './gemini';
 import { supabase } from './supabase';
 import { notifyClient, notifyAdmin } from './notifications';
-import { buildFinalResponse, executeActions } from './commandExecution';
+import { buildFinalResponse, executeActions, recordSale } from './commandExecution';
 import { getClientAccessUrls } from './signedLinks';
 
 // Admin Bot — shopkeeper interface
@@ -285,7 +285,9 @@ clientBot.command('orders', async (ctx: any) => {
       .slice(0, 8)
       .map((item: any, i: number) =>
         `${i + 1}. *${item.item_name}* — ${item.quantity}${item.unit} available` +
-        (item.price_per_unit ? ` @ ₹${item.price_per_unit}/${item.unit}` : '')
+        (Number(item.price_per_unit || 0) > 0
+          ? ` @ ₹${item.price_per_unit}/${item.unit}`
+          : ' _(price not set)_')
       )
       .join('\n');
 
@@ -328,6 +330,14 @@ clientBot.action(/ORDER:(.+)/, async (ctx: any) => {
 
   if (Number(item.quantity || 0) <= 0) {
     return ctx.answerCbQuery('Item is out of stock');
+  }
+
+  if (Number(item.price_per_unit || 0) <= 0) {
+    await ctx.answerCbQuery('Shopkeeper has not set a price for this item yet');
+    await ctx.reply(
+      `❌ ${item.item_name} is not available for instant ordering yet because the price is not set.\nAsk the shopkeeper to add a price in Inventory first.`
+    );
+    return;
   }
 
   const { error: sessionError } = await supabase
@@ -480,21 +490,57 @@ clientBot.on(message('text'), async (ctx: any, next: any) => {
   }
 
   const finalUnit = parsed.unit || session.pending_order.defaultUnit || item.unit;
+  const availableQuantity = Number(item.quantity || 0);
+
+  if (parsed.quantity > availableQuantity) {
+    await ctx.reply(
+      `Only ${availableQuantity} ${item.unit} of ${item.item_name} is available right now. Please send a smaller quantity.`
+    );
+    return;
+  }
+
+  const unitPrice = Number(item.price_per_unit || 0);
+  if (unitPrice <= 0) {
+    await supabase
+      .from('telegram_sessions')
+      .upsert({
+        telegram_id: telegramId,
+        client_id: client.id,
+        business_id: client.business_id,
+        state: 'IDLE',
+        pending_order: {},
+        last_message_at: new Date().toISOString()
+      }, { onConflict: 'telegram_id' });
+
+    await ctx.reply('❌ This item does not have a valid price yet. Ask the shopkeeper to update inventory pricing.');
+    return;
+  }
+
   const estimatedAmount = Number(item.price_per_unit || 0) * parsed.quantity;
   const orderItems = [{
     id: item.id,
     name: item.item_name,
     qty: parsed.quantity,
     unit: finalUnit,
-    price: Number(item.price_per_unit || 0)
+    price: unitPrice,
+    remainingQuantity: Math.max(availableQuantity - parsed.quantity, 0)
   }];
+
+  const saleResult = await recordSale({
+    businessId: client.business_id,
+    client,
+    totalAmount: estimatedAmount,
+    items: orderItems,
+    notes: `Telegram order from @${ctx.from?.username || 'client'}`,
+    decrementInventory: true
+  });
 
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .insert({
       business_id: client.business_id,
       client_id: client.id,
-      status: 'PENDING',
+      status: 'CONFIRMED',
       source: 'TELEGRAM',
       items: orderItems,
       total_amount: estimatedAmount,
@@ -507,7 +553,7 @@ clientBot.on(message('text'), async (ctx: any, next: any) => {
 
   if (orderError || !order) {
     console.error('Create Telegram order error:', orderError);
-    await ctx.reply('❌ Could not place your order right now.');
+    await ctx.reply('❌ Order was priced but could not be tracked. Please contact the shopkeeper.');
     return;
   }
 
@@ -526,13 +572,14 @@ clientBot.on(message('text'), async (ctx: any, next: any) => {
     client.business_id,
     'ORDER_PLACED',
     'New Telegram Order',
-    `${client.name} requested ${parsed.quantity} ${finalUnit} of ${item.item_name}${item.price_per_unit ? ` for approx ₹${estimatedAmount}` : ''}.`
+    `${client.name} ordered ${parsed.quantity} ${finalUnit} of ${item.item_name} for ₹${estimatedAmount}. Outstanding is now ₹${saleResult.client.total_outstanding}.`
   );
 
   await ctx.reply(
     `✅ *Order placed!*\n\n` +
     `${item.item_name} x ${parsed.quantity} ${finalUnit} has been sent to your shopkeeper.\n` +
-    `${item.price_per_unit ? `Estimated amount: ₹${estimatedAmount}\n` : ''}` +
+    `Added to your khata: ₹${estimatedAmount}\n` +
+    `New outstanding: ₹${saleResult.client.total_outstanding}\n` +
     `Order ID: ${order.id}`,
     { parse_mode: 'Markdown' }
   );

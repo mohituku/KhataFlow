@@ -7,6 +7,7 @@ const initialForm = {
   item_name: '',
   quantity: '',
   unit: 'kg',
+  price_per_unit: '',
   low_stock_threshold: '10'
 };
 
@@ -57,6 +58,7 @@ export const StockGrid = () => {
           item_name: form.item_name.trim(),
           quantity: Number(form.quantity || 0),
           unit: form.unit.trim() || 'kg',
+          price_per_unit: form.price_per_unit === '' ? null : Number(form.price_per_unit),
           low_stock_threshold: Number(form.low_stock_threshold || 10)
         })
       });
@@ -135,7 +137,7 @@ export const StockGrid = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <label className="block">
             <span className="text-xs uppercase tracking-wider text-khata-muted font-bold">Item Name</span>
             <input
@@ -165,6 +167,19 @@ export const StockGrid = () => {
               value={form.unit}
               onChange={handleChange}
               placeholder="kg"
+              className="mt-2 w-full px-4 py-3 bg-khata-bg text-khata-text border-[3px] border-khata-border focus:border-khata-accent focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="text-xs uppercase tracking-wider text-khata-muted font-bold">Price / Unit</span>
+            <input
+              name="price_per_unit"
+              type="number"
+              min="0"
+              step="0.01"
+              value={form.price_per_unit}
+              onChange={handleChange}
+              placeholder="42"
               className="mt-2 w-full px-4 py-3 bg-khata-bg text-khata-text border-[3px] border-khata-border focus:border-khata-accent focus:outline-none"
             />
           </label>
@@ -254,6 +269,11 @@ export const StockGrid = () => {
                 <p className="text-3xl font-heading text-khata-accent">{Number(item.quantity || 0)}</p>
                 <p className="text-sm text-khata-muted uppercase tracking-wider">{item.unit}</p>
               </div>
+              <p className="text-xs uppercase tracking-wider text-khata-muted mb-2">
+                {Number(item.price_per_unit || 0) > 0
+                  ? `Price: ₹${Number(item.price_per_unit)} / ${item.unit}`
+                  : 'Price not set'}
+              </p>
               <p className="text-xs uppercase tracking-wider text-khata-muted">
                 Low stock threshold: {Number(item.low_stock_threshold || 0)} {item.unit}
               </p>

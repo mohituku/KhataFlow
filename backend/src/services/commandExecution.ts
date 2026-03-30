@@ -18,6 +18,20 @@ type PaymentSourceConfig = {
   adminBody?: (remainingBalance: number) => string;
 };
 
+type SaleSourceConfig = {
+  businessId: string;
+  client: any;
+  totalAmount: number;
+  items?: any[];
+  notes?: string | null;
+  decrementInventory?: boolean;
+  notificationTitle?: string;
+  notificationBody?: (updatedClient: any) => string;
+  adminTitle?: string;
+  adminBody?: (updatedClient: any) => string;
+  notifyAdminOnSale?: boolean;
+};
+
 export async function executeActions(
   actions: ActionUnit[],
   businessId: string
@@ -183,6 +197,106 @@ export async function confirmOnChainPayment(
   };
 }
 
+export async function recordSale(config: SaleSourceConfig) {
+  const {
+    businessId,
+    client,
+    totalAmount,
+    items = [],
+    notes = null,
+    decrementInventory = false,
+    notificationTitle = 'New Purchase Added',
+    notificationBody = (updatedClient) =>
+      `₹${totalAmount} has been added to your account. Total outstanding: ₹${updatedClient?.total_outstanding || 0}.`,
+    adminTitle = 'New Sale Recorded',
+    adminBody = (updatedClient) =>
+      `${client.name} added ₹${totalAmount} to ledger. Outstanding: ₹${updatedClient?.total_outstanding || 0}.`,
+    notifyAdminOnSale = false
+  } = config;
+
+  const { data: txn, error: txnError } = await supabase
+    .from('transactions')
+    .insert({
+      business_id: businessId,
+      client_id: client.id,
+      type: 'SALE',
+      amount: totalAmount,
+      items,
+      status: 'PENDING',
+      notes
+    })
+    .select()
+    .single();
+
+  if (txnError) throw txnError;
+
+  const { data: invoice, error: invoiceError } = await supabase
+    .from('invoices')
+    .insert({
+      business_id: businessId,
+      client_id: client.id,
+      amount: totalAmount,
+      original_amount: totalAmount,
+      paid_amount: 0,
+      remaining_amount: totalAmount,
+      items,
+      status: 'PENDING'
+    })
+    .select()
+    .single();
+
+  if (invoiceError) throw invoiceError;
+
+  if (decrementInventory) {
+    for (const item of items) {
+      if (!item?.id || !item?.qty) continue;
+
+      const { error: inventoryError } = await supabase
+        .from('inventory')
+        .update({
+          quantity: Math.max(Number(item.remainingQuantity ?? 0), 0)
+        })
+        .eq('business_id', businessId)
+        .eq('id', item.id);
+
+      if (inventoryError) throw inventoryError;
+    }
+  }
+
+  await supabase.rpc('increment_client_balance', {
+    p_client_id: client.id,
+    p_amount: totalAmount
+  });
+
+  const { data: updatedClient, error: updatedClientError } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('id', client.id)
+    .single();
+
+  if (updatedClientError || !updatedClient) {
+    throw updatedClientError || new Error('Failed to refresh client after sale');
+  }
+
+  await notifyClient(
+    client.id,
+    'PAYMENT_DUE',
+    notificationTitle,
+    notificationBody(updatedClient)
+  );
+
+  if (notifyAdminOnSale) {
+    await notifyAdmin(
+      businessId,
+      'PAYMENT_DUE',
+      adminTitle,
+      adminBody(updatedClient)
+    );
+  }
+
+  return { client: updatedClient, transaction: txn, invoice };
+}
+
 async function handleAddSale(action: ActionUnit, businessId: string) {
   const totalAmount = action.totalAmount || 0;
 
@@ -209,55 +323,12 @@ async function handleAddSale(action: ActionUnit, businessId: string) {
     client = insertedClient;
   }
 
-  const { data: txn, error: txnError } = await supabase
-    .from('transactions')
-    .insert({
-      business_id: businessId,
-      client_id: client.id,
-      type: 'SALE',
-      amount: totalAmount,
-      items: action.items || [],
-      status: 'PENDING'
-    })
-    .select()
-    .single();
-
-  if (txnError) throw txnError;
-
-  const { data: invoice } = await supabase
-    .from('invoices')
-    .insert({
-      business_id: businessId,
-      client_id: client.id,
-      amount: totalAmount,
-      original_amount: totalAmount,
-      paid_amount: 0,
-      remaining_amount: totalAmount,
-      items: action.items || [],
-      status: 'PENDING'
-    })
-    .select()
-    .single();
-
-  await supabase.rpc('increment_client_balance', {
-    p_client_id: client.id,
-    p_amount: totalAmount
+  return recordSale({
+    businessId,
+    client,
+    totalAmount,
+    items: action.items || []
   });
-
-  const { data: updatedClient } = await supabase
-    .from('clients')
-    .select('*')
-    .eq('id', client.id)
-    .single();
-
-  await notifyClient(
-    client.id,
-    'PAYMENT_DUE',
-    'New Purchase Added',
-    `₹${totalAmount} has been added to your account. Total outstanding: ₹${updatedClient?.total_outstanding || 0}.`
-  );
-
-  return { client: updatedClient, transaction: txn, invoice };
 }
 
 async function applyPaymentToInvoices(clientId: string, businessId: string, paymentAmount: number) {
@@ -309,6 +380,7 @@ async function applyPaymentToInvoices(clientId: string, businessId: string, paym
       recoveredAmount: nextPaidAmount,
       status: nextStatus,
       hasMintedNFT: Boolean(invoice.nft_token_id),
+      tokenId: invoice.nft_token_id || null,
       dueDate: invoice.due_date,
       updatedInvoice
     });
@@ -369,6 +441,12 @@ async function recordPayment(config: PaymentSourceConfig) {
   }
 
   const remainingBalance = Number(updatedClient.total_outstanding || 0);
+  const settledInvoices = invoiceAllocation.allocations.filter(
+    (allocation) => allocation.status === 'SETTLED'
+  );
+  const settledMintedInvoices = settledInvoices.filter(
+    (allocation) => allocation.hasMintedNFT
+  );
 
   await notifyClient(
     client.id,
@@ -384,6 +462,39 @@ async function recordPayment(config: PaymentSourceConfig) {
     adminBody(remainingBalance)
   );
 
+  if (settledInvoices.length > 0) {
+    const invoiceSummary = settledInvoices
+      .map((allocation) => `${allocation.invoiceId} (₹${allocation.recoveredAmount})`)
+      .join(', ');
+
+    await notifyAdmin(
+      businessId,
+      'PAYMENT_RECEIVED',
+      'Invoice Recovered',
+      `${client.name} settled ${settledInvoices.length} invoice(s): ${invoiceSummary}.`
+    );
+  }
+
+  if (settledMintedInvoices.length > 0) {
+    const nftSummary = settledMintedInvoices
+      .map((allocation) => `Invoice ${allocation.invoiceId}${allocation.tokenId ? ` / NFT #${allocation.tokenId}` : ''}`)
+      .join(', ');
+
+    await notifyClient(
+      client.id,
+      'NFT_SETTLED',
+      'Debt Record Settled',
+      `Your NFT-backed khata is marked settled for ${nftSummary}.`
+    );
+
+    await notifyAdmin(
+      businessId,
+      'NFT_SETTLED',
+      'NFT Debt Settled',
+      `${client.name} fully paid ${nftSummary}. Recovered amount is now reflected in invoices.`
+    );
+  }
+
   return {
     settled: remainingBalance === 0,
     amount: paymentAmount,
@@ -395,6 +506,8 @@ async function recordPayment(config: PaymentSourceConfig) {
       recoveredAmount: paymentAmount,
       remainingBalance,
       invoices: invoiceAllocation.allocations,
+      settledInvoices,
+      settledMintedInvoices,
       unallocatedAmount: invoiceAllocation.unallocatedAmount
     },
     client: updatedClient

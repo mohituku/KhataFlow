@@ -36,6 +36,7 @@ const inventorySchema = z.object({
   item_name: z.string().min(1),
   quantity: z.number().min(0),
   unit: z.string().min(1),
+  price_per_unit: z.number().min(0).nullable().optional(),
   low_stock_threshold: z.number().optional().default(10)
 });
 
@@ -43,12 +44,19 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
     const businessId = getBusinessId(req);
     const itemData = inventorySchema.parse(req.body);
+    const { data: existingItem } = await supabase
+      .from('inventory')
+      .select('price_per_unit')
+      .eq('business_id', businessId)
+      .ilike('item_name', itemData.item_name)
+      .maybeSingle();
 
     const { data, error } = await supabase
       .from('inventory')
       .upsert({
         business_id: businessId,
-        ...itemData
+        ...itemData,
+        price_per_unit: itemData.price_per_unit ?? existingItem?.price_per_unit ?? null
       }, {
         onConflict: 'business_id,item_name'
       })

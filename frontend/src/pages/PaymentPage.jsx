@@ -16,6 +16,7 @@ export default function PaymentPage() {
   const [activePaymentToken, setActivePaymentToken] = useState('');
   const [txHash, setTxHash] = useState(null);
   const [error, setError] = useState(null);
+  const returnToClientUrl = `/client/${clientId}?token=${encodeURIComponent(accessToken)}`;
   
   const { address, connect, isConnecting } = useWalletStore();
 
@@ -155,6 +156,12 @@ export default function PaymentPage() {
               hover:bg-khata-chain/80 transition-colors"
           >
             View on Explorer
+          </a>
+          <a
+            href={returnToClientUrl}
+            className="inline-block px-6 py-3 bg-transparent text-khata-text border-[3px] border-khata-border font-bold uppercase tracking-wider hover:border-khata-accent hover:text-khata-accent transition-colors"
+          >
+            Return to Client Page
           </a>
         </div>
       </div>
