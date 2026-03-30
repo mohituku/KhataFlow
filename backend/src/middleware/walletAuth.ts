@@ -10,10 +10,38 @@ export interface AuthRequest extends Request {
 // Cache wallet → businessId for 5 minutes to avoid DB on every request
 const walletCache = new Map<string, { businessId: string; exp: number }>();
 
+function isPublicPath(path: string) {
+  const clientPortalPathPattern = /^\/api\/client\/[0-9a-fA-F-]{36}\/[0-9a-fA-F-]{36}(?:\/confirm-payment)?$/;
+
+  if (path === '/health' || path.startsWith('/health/')) {
+    return true;
+  }
+
+  if (path.startsWith('/api/client/lookup/')) {
+    return true;
+  }
+
+  if (clientPortalPathPattern.test(path)) {
+    return true;
+  }
+
+  if (path.startsWith('/api/payment/x402/')) {
+    return true;
+  }
+
+  if (path.startsWith('/api/payment/on-chain/')) {
+    return true;
+  }
+
+  if (path.startsWith('/api/qr/client/')) {
+    return true;
+  }
+
+  return false;
+}
+
 export async function walletAuthMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Skip auth for public routes
-  const publicPaths = ['/health', '/api/client/', '/api/telegram/', '/api/payment/x402/', '/api/payment/on-chain/', '/api/qr/client/'];
-  if (publicPaths.some(p => req.path.startsWith(p))) {
+  if (isPublicPath(req.path)) {
     return next();
   }
 

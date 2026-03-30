@@ -30,6 +30,7 @@ export const ClientTable = () => {
   const navigate = useNavigate();
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(null);
+  const [shareClient, setShareClient] = useState(null);
   const [loadingClientId, setLoadingClientId] = useState(null);
   const [search, setSearch] = useState('');
 
@@ -72,27 +73,29 @@ export const ClientTable = () => {
   const shareClientPortal = async (client) => {
     try {
       const payload = await fetchJson(`/api/client/share-link/${client.id}`);
-      const url = payload.portalUrl;
-
-      if (navigator.share) {
-        await navigator.share({
-          title: `${client.name}'s KhataFlow account`,
-          url
-        });
-      } else if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(url);
-        toast.success('Client portal link copied', {
-          description: `Share it with ${client.name}`
-        });
-      } else {
-        throw new Error('Share is not supported on this device');
-      }
+      setShareClient({
+        name: client.name,
+        ...payload
+      });
     } catch (error) {
       if (error?.name !== 'AbortError') {
         toast.error('Failed to share client portal', {
           description: error.message
         });
       }
+    }
+  };
+
+  const copyPortalLink = async () => {
+    if (!shareClient?.portalUrl) return;
+
+    try {
+      await navigator.clipboard.writeText(shareClient.portalUrl);
+      toast.success('Client portal link copied', {
+        description: `Share it with ${shareClient.name}`
+      });
+    } catch (error) {
+      toast.error('Failed to copy portal link');
     }
   };
 
@@ -263,6 +266,65 @@ export const ClientTable = () => {
                     </div>
                   ))}
                 </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!shareClient} onOpenChange={() => setShareClient(null)}>
+        <DialogContent className="bg-khata-surface border-[3px] border-khata-border max-w-lg">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-heading uppercase tracking-wider text-khata-text">
+              Share Client Portal
+            </DialogTitle>
+          </DialogHeader>
+
+          {shareClient && (
+            <div className="space-y-4">
+              <p className="text-sm text-khata-muted">
+                Send this signed portal link to <span className="text-khata-text font-bold">{shareClient.name}</span>, or let them scan the QR code.
+              </p>
+
+              <div className="bg-khata-bg border-[3px] border-khata-border p-4 break-all text-sm text-khata-text font-mono">
+                {shareClient.portalUrl}
+              </div>
+
+              <div className="p-4 bg-white border-[3px] border-khata-accent flex items-center justify-center">
+                <img src={shareClient.qrDataUrl} alt="Client portal QR code" className="w-full max-w-xs" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <button
+                  onClick={copyPortalLink}
+                  className="px-4 py-3 bg-transparent text-khata-text font-bold uppercase tracking-wider text-sm border-[3px] border-khata-border hover:border-khata-accent hover:text-khata-accent transition-all duration-200"
+                >
+                  Copy Link
+                </button>
+                <a
+                  href={shareClient.portalUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-4 py-3 bg-khata-accent text-khata-bg font-bold uppercase tracking-wider text-sm border-[3px] border-khata-bg hover:scale-[1.02] transition-all duration-200 text-center"
+                >
+                  Open Portal
+                </a>
+                <button
+                  onClick={async () => {
+                    if (!navigator.share) {
+                      await copyPortalLink();
+                      return;
+                    }
+
+                    await navigator.share({
+                      title: `${shareClient.name}'s KhataFlow account`,
+                      url: shareClient.portalUrl
+                    });
+                  }}
+                  className="px-4 py-3 bg-transparent text-khata-text font-bold uppercase tracking-wider text-sm border-[3px] border-khata-border hover:border-khata-accent hover:text-khata-accent transition-all duration-200"
+                >
+                  Share
+                </button>
               </div>
             </div>
           )}

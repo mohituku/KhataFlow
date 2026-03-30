@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import QRCode from 'qrcode';
 import { supabase } from '../services/supabase';
 import { getBusinessId } from '../middleware/walletAuth';
 import { getClientAccessUrls, verifyClientAccessToken } from '../services/signedLinks';
@@ -153,11 +154,17 @@ router.get('/share-link/:clientId', async (req: Request, res: Response): Promise
     }
 
     const access = getClientAccessUrls(client.business_id, client.id);
+    const qrDataUrl = await QRCode.toDataURL(access.portalUrl, {
+      width: 400,
+      margin: 2,
+      color: { dark: '#00D084', light: '#0F1117' }
+    });
 
     res.json({
       success: true,
       clientId: client.id,
       businessId: client.business_id,
+      qrDataUrl,
       ...access
     });
   } catch (error: any) {
