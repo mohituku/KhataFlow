@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Toaster } from './components/ui/sonner';
 import { AppShell } from './components/layout/AppShell';
 import ChatPage from './pages/ChatPage';
+import ClientsPage from './pages/ClientsPage';
 import LedgerPage from './pages/LedgerPage';
 import InventoryPage from './pages/InventoryPage';
 import InvoicesPage from './pages/InvoicesPage';
@@ -30,7 +31,9 @@ function App() {
         <div className="App">
           <Routes>
             <Route path="/client/:businessId/:clientId" element={<ClientPortalPage />} />
+            <Route path="/client/:clientId" element={<ClientPortalPage />} />
             <Route path="/" element={withShell(<ChatPage />)} />
+            <Route path="/clients" element={withShell(<ClientsPage />)} />
             <Route path="/ledger" element={withShell(<LedgerPage />)} />
             <Route path="/inventory" element={withShell(<InventoryPage />)} />
             <Route path="/invoices" element={withShell(<InvoicesPage />)} />

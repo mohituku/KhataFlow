@@ -4,11 +4,21 @@ import { supabase } from '../services/supabase';
 import { z } from 'zod';
 import { getBusinessId } from '../middleware/businessId';
 import { ActionUnit, ParsedCommand } from '../types';
+import {
+  getOrCreateChatSession,
+  updateChatSession,
+  messageHasReferenceWords,
+  isInvoiceReference,
+  isLedgerReference,
+  isPaymentReference
+} from '../services/chatSessionMemory';
 
 const router = Router();
+type ExecutedActionResult = { action: ActionUnit; result: any };
 
 const chatRequestSchema = z.object({
   message: z.string().min(1),
+  sessionId: z.string().nullable().optional(),
   conversationHistory: z.array(z.object({
     role: z.string(),
     content: z.string()
@@ -18,28 +28,32 @@ const chatRequestSchema = z.object({
 // ─── Main handler ──────────────────────────────────────────────────────────
 router.post('/', async (req: Request, res: Response): Promise<void> => {
   try {
-    const { message, conversationHistory } = chatRequestSchema.parse(req.body);
+    const { message, conversationHistory, sessionId: incomingSessionId } = chatRequestSchema.parse(req.body);
     const businessId = getBusinessId(req);
+    const { sessionId, session } = getOrCreateChatSession(businessId, incomingSessionId);
 
     // Parse with new multi-action Gemini
     const parsed: ParsedCommand = await geminiService.parseCommand(message, conversationHistory);
+    const hydratedParsed = hydrateParsedCommand(parsed, message, session);
 
     // Execute ALL actions in parallel where safe (reads), serial for writes
-    const actionResults = await executeActions(parsed.actions, businessId);
+    const actionResults = await executeActions(hydratedParsed.actions, businessId);
+    syncSessionFromResults(sessionId, actionResults);
 
     // Build the final enriched response
-    const finalResponse = buildFinalResponse(parsed, actionResults, message);
+    const finalResponse = buildFinalResponse(hydratedParsed, actionResults, message);
 
     res.json({
       success: true,
+      sessionId,
       // Legacy field so frontend doesn't break
       action: {
-        ...(parsed.actions[0] || { intent: 'UNKNOWN' as const }),
+        ...(hydratedParsed.actions[0] || { intent: 'UNKNOWN' as const }),
         response: finalResponse
       },
       // New fields
       parsedCommand: {
-        ...parsed,
+        ...hydratedParsed,
         response: finalResponse
       },
       actionResults,
@@ -58,7 +72,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
 async function executeActions(
   actions: ActionUnit[],
   businessId: string
-): Promise<Array<{ action: ActionUnit; result: any }>> {
+): Promise<ExecutedActionResult[]> {
   const results = [];
 
   for (const action of actions) {
@@ -94,6 +108,126 @@ async function executeActions(
   }
 
   return results;
+}
+
+function hydrateParsedCommand(parsed: ParsedCommand, message: string, session: {
+  lastClientId?: string;
+  lastClientName?: string;
+  lastInvoiceId?: string;
+  lastOutstandingAmount?: number;
+}) {
+  const hasReference = messageHasReferenceWords(message);
+
+  const normalizedActions = parsed.actions.map((action) => {
+    const nextAction: ActionUnit = {
+      ...action,
+      items: Array.isArray(action.items) ? action.items : [],
+      filters: action.filters || {}
+    };
+
+    if (!nextAction.clientName && hasReference && session.lastClientName) {
+      if (['QUERY_LEDGER', 'MARK_PAID', 'GENERATE_INVOICE'].includes(nextAction.intent)) {
+        nextAction.clientName = session.lastClientName;
+      }
+    }
+
+    if (
+      nextAction.intent === 'MARK_PAID' &&
+      !nextAction.paymentAmount &&
+      hasReference &&
+      session.lastOutstandingAmount
+    ) {
+      nextAction.paymentAmount = session.lastOutstandingAmount;
+    }
+
+    return nextAction;
+  });
+
+  if (
+    normalizedActions.every((action) => action.intent === 'UNKNOWN') &&
+    hasReference &&
+    session.lastClientName
+  ) {
+    if (isPaymentReference(message)) {
+      normalizedActions[0] = {
+        intent: 'MARK_PAID',
+        clientName: session.lastClientName,
+        paymentAmount: session.lastOutstandingAmount || null,
+        items: [],
+        filters: {},
+        totalAmount: null
+      };
+    } else if (isLedgerReference(message)) {
+      normalizedActions[0] = {
+        intent: 'QUERY_LEDGER',
+        clientName: session.lastClientName,
+        items: [],
+        filters: {},
+        totalAmount: null,
+        paymentAmount: null
+      };
+    } else if (isInvoiceReference(message)) {
+      normalizedActions[0] = {
+        intent: 'GENERATE_INVOICE',
+        clientName: session.lastClientName,
+        items: [],
+        filters: {},
+        totalAmount: null,
+        paymentAmount: null
+      };
+    }
+  }
+
+  return {
+    ...parsed,
+    actions: normalizedActions
+  };
+}
+
+function syncSessionFromResults(sessionId: string, actionResults: ExecutedActionResult[]) {
+  const lastSuccessful = [...actionResults]
+    .reverse()
+    .find(({ result }) => result && !result.error);
+
+  if (!lastSuccessful) return;
+
+  const nextSessionPatch: Record<string, any> = {
+    lastIntent: lastSuccessful.action.intent
+  };
+
+  const resultClient =
+    lastSuccessful.result.client ||
+    (lastSuccessful.result.clientName
+      ? {
+          id: lastSuccessful.result.clientId,
+          name: lastSuccessful.result.clientName,
+          total_outstanding: lastSuccessful.result.remainingBalance
+        }
+      : null);
+
+  if (resultClient?.name) {
+    nextSessionPatch.lastClientName = resultClient.name;
+  } else if (lastSuccessful.action.clientName) {
+    nextSessionPatch.lastClientName = lastSuccessful.action.clientName;
+  }
+
+  if (resultClient?.id) {
+    nextSessionPatch.lastClientId = resultClient.id;
+  }
+
+  if (typeof resultClient?.total_outstanding === 'number') {
+    nextSessionPatch.lastOutstandingAmount = Number(resultClient.total_outstanding || 0);
+  } else if (typeof lastSuccessful.result.remainingBalance === 'number') {
+    nextSessionPatch.lastOutstandingAmount = Number(lastSuccessful.result.remainingBalance || 0);
+  }
+
+  if (lastSuccessful.result.invoice?.id) {
+    nextSessionPatch.lastInvoiceId = lastSuccessful.result.invoice.id;
+  } else if (lastSuccessful.result.invoices?.[0]?.id) {
+    nextSessionPatch.lastInvoiceId = lastSuccessful.result.invoices[0].id;
+  }
+
+  updateChatSession(sessionId, nextSessionPatch);
 }
 
 // ─── Handlers ─────────────────────────────────────────────────────────────
@@ -146,6 +280,9 @@ async function handleAddSale(action: ActionUnit, businessId: string) {
       business_id: businessId,
       client_id: client.id,
       amount: totalAmount,
+      original_amount: totalAmount,
+      paid_amount: 0,
+      remaining_amount: totalAmount,
       items: action.items || [],
       status: 'PENDING'
     })
@@ -165,6 +302,68 @@ async function handleAddSale(action: ActionUnit, businessId: string) {
     .single();
 
   return { client: updatedClient, transaction: txn, invoice };
+}
+
+async function applyPaymentToInvoices(clientId: string, businessId: string, paymentAmount: number) {
+  const { data: openInvoices, error } = await supabase
+    .from('invoices')
+    .select('id, amount, original_amount, paid_amount, remaining_amount, status, nft_token_id, due_date, created_at')
+    .eq('business_id', businessId)
+    .eq('client_id', clientId)
+    .in('status', ['PENDING', 'MINTED'])
+    .order('created_at', { ascending: true });
+
+  if (error) throw error;
+
+  const allocations = [];
+  let remainingPayment = paymentAmount;
+
+  for (const invoice of openInvoices || []) {
+    if (remainingPayment <= 0) break;
+
+    const invoiceOriginal = Number(invoice.original_amount ?? invoice.amount ?? 0);
+    const invoiceRemaining = Number(invoice.remaining_amount ?? invoice.amount ?? 0);
+    if (invoiceRemaining <= 0) continue;
+
+    const appliedAmount = Math.min(invoiceRemaining, remainingPayment);
+    const nextPaidAmount = Number(invoice.paid_amount || 0) + appliedAmount;
+    const nextRemainingAmount = Math.max(invoiceRemaining - appliedAmount, 0);
+    const nextStatus = nextRemainingAmount === 0 ? 'SETTLED' : invoice.status;
+
+    const { data: updatedInvoice, error: updateError } = await supabase
+      .from('invoices')
+      .update({
+        original_amount: invoiceOriginal,
+        paid_amount: nextPaidAmount,
+        remaining_amount: nextRemainingAmount,
+        status: nextStatus,
+        settled_at: nextRemainingAmount === 0 ? new Date().toISOString() : null
+      })
+      .eq('business_id', businessId)
+      .eq('id', invoice.id)
+      .select('id, status, original_amount, paid_amount, remaining_amount, nft_token_id, due_date')
+      .single();
+
+    if (updateError) throw updateError;
+
+    allocations.push({
+      invoiceId: invoice.id,
+      appliedAmount,
+      remainingAmount: nextRemainingAmount,
+      recoveredAmount: nextPaidAmount,
+      status: nextStatus,
+      hasMintedNFT: Boolean(invoice.nft_token_id),
+      dueDate: invoice.due_date,
+      updatedInvoice
+    });
+
+    remainingPayment -= appliedAmount;
+  }
+
+  return {
+    allocations,
+    unallocatedAmount: remainingPayment
+  };
 }
 
 async function handleUpdateStock(action: ActionUnit, businessId: string) {
@@ -228,18 +427,35 @@ async function handleMarkPaid(action: ActionUnit, businessId: string) {
     status: 'PAID'
   });
 
+  const invoiceAllocation = await applyPaymentToInvoices(client.id, businessId, paymentAmount);
+
   await supabase.rpc('decrement_client_balance', {
     p_client_id: client.id,
     p_amount: paymentAmount
   });
 
   const remainingBalance = Math.max(Number(client.total_outstanding) - paymentAmount, 0);
+  const { data: updatedClient } = await supabase
+    .from('clients')
+    .select('*')
+    .eq('business_id', businessId)
+    .eq('id', client.id)
+    .single();
 
   return {
     settled: remainingBalance === 0,
     amount: paymentAmount,
     clientName: client.name,
-    remainingBalance
+    clientId: client.id,
+    remainingBalance,
+    recoveredAmount: paymentAmount,
+    statement: {
+      recoveredAmount: paymentAmount,
+      remainingBalance,
+      invoices: invoiceAllocation.allocations,
+      unallocatedAmount: invoiceAllocation.unallocatedAmount
+    },
+    client: updatedClient
   };
 }
 
@@ -414,7 +630,7 @@ async function handleGenerateInvoice(action: ActionUnit, businessId: string) {
   return {
     client,
     invoices: pendingInvoices || [],
-    totalPending: (pendingInvoices || []).reduce((s, i) => s + Number(i.amount), 0)
+    totalPending: (pendingInvoices || []).reduce((s, i) => s + Number(i.remaining_amount ?? i.amount), 0)
   };
 }
 
@@ -457,10 +673,13 @@ function buildSingleActionResponse(action: ActionUnit, result: any, fallback: st
     }
     case 'MARK_PAID': {
       const name = result.clientName || action.clientName || 'client';
-      const amount = formatInr(result.amount || 0);
+      const amount = formatInr(result.recoveredAmount || result.amount || 0);
       const remaining = formatInr(result.remainingBalance || 0);
       const settled = result.settled ? ' ✅ Full balance clear!' : '';
-      return `${name} ki ₹${amount} payment record ho gayi. Baaki balance: ₹${remaining}.${settled}`;
+      const invoiceNote = result.statement?.invoices?.length
+        ? ` Recovered: ₹${amount}. Remaining balance: ₹${remaining}.`
+        : '';
+      return `${name} ki ₹${amount} payment record ho gayi. Baaki balance: ₹${remaining}.${settled}${invoiceNote}`;
     }
     case 'UPDATE_STOCK': {
       const count = result.updatedItems?.length || 0;

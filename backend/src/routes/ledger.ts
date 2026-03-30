@@ -8,6 +8,10 @@ const router = Router();
 router.get('/clients', async (req: Request, res: Response): Promise<void> => {
   try {
     const businessId = getBusinessId(req);
+    const search =
+      typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim().toLowerCase()
+        : '';
 
     const { data: clients, error } = await supabase
       .from('clients')
@@ -41,7 +45,18 @@ router.get('/clients', async (req: Request, res: Response): Promise<void> => {
       clients?.map((client) => ({
         ...client,
         lastTransaction: transactionsByClient.get(client.id) || client.updated_at || client.created_at
-      })) || [];
+      }))
+        .filter((client) => {
+          if (!search) return true;
+
+          return [
+            client.id,
+            client.name,
+            client.phone
+          ]
+            .filter(Boolean)
+            .some((value) => String(value).toLowerCase().includes(search));
+        }) || [];
 
     res.json({ success: true, clients: enrichedClients });
   } catch (error: any) {

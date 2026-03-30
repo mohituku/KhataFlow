@@ -1,9 +1,9 @@
 import { useEffect, useState } from 'react';
-import { Eye, Coins, Share2 } from 'lucide-react';
+import { Eye, Coins, Share2, Search } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatCurrency } from '../../lib/formatters';
 import { format } from 'date-fns';
-import { fetchJson, getBusinessId } from '../../lib/api';
+import { fetchJson } from '../../lib/api';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -31,11 +31,14 @@ export const ClientTable = () => {
   const [clients, setClients] = useState([]);
   const [selectedClient, setSelectedClient] = useState(null);
   const [loadingClientId, setLoadingClientId] = useState(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let isMounted = true;
 
-    fetchJson('/api/ledger/clients')
+    const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
+
+    fetchJson(`/api/ledger/clients${query}`)
       .then((data) => {
         if (isMounted && data?.success) {
           setClients(data.clients || []);
@@ -48,7 +51,7 @@ export const ClientTable = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [search]);
 
   const handleViewClient = async (client) => {
     setLoadingClientId(client.id);
@@ -67,8 +70,7 @@ export const ClientTable = () => {
   };
 
   const shareClientPortal = async (client) => {
-    const businessId = getBusinessId();
-    const url = `${window.location.origin}/client/${businessId}/${client.id}`;
+    const url = `${window.location.origin}/client/${client.id}`;
 
     try {
       if (navigator.share) {
@@ -96,15 +98,29 @@ export const ClientTable = () => {
   return (
     <>
       <div className="border-[3px] border-khata-border overflow-hidden bg-khata-surface" data-testid="client-table">
+        <div className="p-4 border-b-[3px] border-khata-border bg-khata-surface">
+          <div className="relative">
+            <Search className="w-4 h-4 text-khata-muted absolute left-4 top-1/2 -translate-y-1/2" />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search by client name, ID, or phone"
+              className="w-full bg-khata-bg border-[3px] border-khata-border pl-11 pr-4 py-3 text-khata-text focus:border-khata-accent focus:outline-none"
+            />
+          </div>
+        </div>
         <div className="bg-khata-bg border-b-[3px] border-khata-border">
           <div className="grid grid-cols-12 gap-4 p-4">
+            <div className="col-span-2">
+              <p className="text-xs uppercase tracking-[0.2em] text-khata-muted font-bold">Client ID</p>
+            </div>
             <div className="col-span-3">
               <p className="text-xs uppercase tracking-[0.2em] text-khata-muted font-bold">Client Name</p>
             </div>
-            <div className="col-span-3">
+            <div className="col-span-2">
               <p className="text-xs uppercase tracking-[0.2em] text-khata-muted font-bold">Outstanding</p>
             </div>
-            <div className="col-span-3">
+            <div className="col-span-2">
               <p className="text-xs uppercase tracking-[0.2em] text-khata-muted font-bold">Last Transaction</p>
             </div>
             <div className="col-span-3">
@@ -113,21 +129,29 @@ export const ClientTable = () => {
           </div>
         </div>
         <div>
+          {clients.length === 0 && (
+            <div className="p-6 text-sm text-khata-muted">
+              No clients found for the current search.
+            </div>
+          )}
           {clients.map((client) => (
             <div
               key={client.id}
               className="grid grid-cols-12 gap-4 p-4 border-b border-khata-border hover:bg-khata-bg/50 transition-colors"
               data-testid={`client-row-${client.id}`}
             >
+              <div className="col-span-2">
+                <p className="text-xs text-khata-muted break-all">{client.id}</p>
+              </div>
               <div className="col-span-3">
                 <p className="text-sm font-bold text-khata-text">{client.name}</p>
               </div>
-              <div className="col-span-3">
+              <div className="col-span-2">
                 <p className="text-sm font-bold text-khata-accent">
                   {formatCurrency(Number(client.total_outstanding || 0))}
                 </p>
               </div>
-              <div className="col-span-3">
+              <div className="col-span-2">
                 <p className="text-sm text-khata-muted">
                   {client.lastTransaction
                     ? format(new Date(client.lastTransaction), 'MMM dd, yyyy')

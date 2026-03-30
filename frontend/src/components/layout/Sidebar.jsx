@@ -1,9 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
-import { MessageSquare, Users, Package, FileText, Coins } from 'lucide-react';
+import { MessageSquare, Users, Package, FileText, Coins, ScrollText } from 'lucide-react';
 
 const navItems = [
   { path: '/', label: 'Chat', icon: MessageSquare },
-  { path: '/ledger', label: 'Ledger', icon: Users },
+  { path: '/clients', label: 'Clients', icon: Users },
+  { path: '/ledger', label: 'Ledger', icon: ScrollText },
   { path: '/inventory', label: 'Inventory', icon: Package },
   { path: '/invoices', label: 'Invoices', icon: FileText },
   { path: '/chain', label: 'Chain', icon: Coins }

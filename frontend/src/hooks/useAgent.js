@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { useAppStore } from '../store/useAppStore';
 import { fetchJson } from '../lib/api';
 
+const CHAT_SESSION_STORAGE_KEY = 'khataflow-chat-session-id';
+
 export const useAgent = () => {
   const [isLoading, setIsLoading] = useState(false);
   const { conversationHistory, addMessage, triggerDashboardRefresh } = useAppStore();
@@ -21,15 +23,26 @@ export const useAgent = () => {
     addMessage(userMessage);
 
     try {
+      const storedSessionId =
+        typeof window !== 'undefined'
+          ? window.sessionStorage.getItem(CHAT_SESSION_STORAGE_KEY)
+          : null;
+      const sessionId = storedSessionId || undefined;
+
       const data = await fetchJson('/api/chat', {
         method: 'POST',
         body: JSON.stringify({
           message: trimmedMessage,
+          sessionId,
           conversationHistory: [...conversationHistory, userMessage]
             .slice(-12)  // slightly more context
             .map((entry) => ({ role: entry.role, content: entry.content }))
         })
       });
+
+      if (data.sessionId && typeof window !== 'undefined') {
+        window.sessionStorage.setItem(CHAT_SESSION_STORAGE_KEY, data.sessionId);
+      }
 
       const responseText =
         data.parsedCommand?.response ||

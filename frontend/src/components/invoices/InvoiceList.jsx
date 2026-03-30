@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { ExternalLink, FileText } from 'lucide-react';
+import { ExternalLink, FileText, Search } from 'lucide-react';
 import { formatCurrency } from '../../lib/formatters';
 import { format } from 'date-fns';
 import { fetchJson } from '../../lib/api';
 
 export const InvoiceList = () => {
   const [invoices, setInvoices] = useState([]);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     let isMounted = true;
+    const query = search.trim() ? `?search=${encodeURIComponent(search.trim())}` : '';
 
-    fetchJson('/api/invoices')
+    fetchJson(`/api/invoices${query}`)
       .then((data) => {
         if (isMounted && data?.success) {
           setInvoices(data.invoices || []);
@@ -23,10 +25,19 @@ export const InvoiceList = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [search]);
 
   return (
     <div className="space-y-4" data-testid="invoice-list">
+      <div className="relative">
+        <Search className="w-4 h-4 text-khata-muted absolute left-4 top-1/2 -translate-y-1/2" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by invoice ID, client name, or status"
+          className="w-full bg-khata-surface border-[3px] border-khata-border pl-11 pr-4 py-3 text-khata-text focus:border-khata-accent focus:outline-none"
+        />
+      </div>
       {invoices.length === 0 && (
         <div className="bg-khata-surface border-[3px] border-khata-border p-6 text-khata-muted">
           No invoices found yet. Record a sale in chat to generate one automatically.
@@ -71,7 +82,12 @@ export const InvoiceList = () => {
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Amount</p>
-              <p className="text-lg font-heading text-khata-accent">{formatCurrency(Number(invoice.amount || 0))}</p>
+              <p className="text-lg font-heading text-khata-accent">
+                {formatCurrency(Number(invoice.remaining_amount ?? invoice.amount ?? 0))}
+              </p>
+              <p className="text-xs text-khata-muted mt-1">
+                Recovered: {formatCurrency(Number(invoice.paid_amount || 0))}
+              </p>
             </div>
             <div>
               <p className="text-xs uppercase tracking-wider text-khata-muted mb-1">Date</p>

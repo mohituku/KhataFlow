@@ -67,12 +67,16 @@ CREATE TABLE IF NOT EXISTS invoices (
   business_id TEXT NOT NULL,
   client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
   amount NUMERIC NOT NULL,
+  original_amount NUMERIC,
+  paid_amount NUMERIC NOT NULL DEFAULT 0,
+  remaining_amount NUMERIC,
   status TEXT NOT NULL DEFAULT 'PENDING' CHECK (status IN ('PENDING', 'MINTED', 'SETTLED')),
   items JSONB,
   nft_token_id TEXT,
   nft_tx_hash TEXT,
   chain TEXT DEFAULT 'flow-evm-testnet',
   due_date TIMESTAMPTZ,
+  settled_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ DEFAULT NOW(),
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );

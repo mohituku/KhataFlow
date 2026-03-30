@@ -19,8 +19,11 @@ export default function ClientPortalPage() {
 
   useEffect(() => {
     let isMounted = true;
+    const apiPath = businessId
+      ? `/api/client/${businessId}/${clientId}`
+      : `/api/client/lookup/${clientId}`;
 
-    fetch(getApiUrl(`/api/client/${businessId}/${clientId}`))
+    fetch(getApiUrl(apiPath))
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) {
@@ -74,6 +77,7 @@ export default function ClientPortalPage() {
 
   const handleNotifyPayment = async () => {
     const amount = Number(paymentAmount);
+    const resolvedBusinessId = data?.businessId || businessId;
 
     if (!amount || amount <= 0) {
       toast.error('Enter a valid payment amount');
@@ -83,7 +87,7 @@ export default function ClientPortalPage() {
     setIsSubmitting(true);
 
     try {
-      const response = await fetch(getApiUrl(`/api/client/${businessId}/${clientId}/confirm-payment`), {
+      const response = await fetch(getApiUrl(`/api/client/${resolvedBusinessId}/${clientId}/confirm-payment`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -140,31 +144,53 @@ export default function ClientPortalPage() {
     );
   }
 
-  const { businessName, client, transactions, nft } = data;
+  const {
+    businessName,
+    client,
+    purchases = [],
+    payments = [],
+    invoices = [],
+    nft,
+    statement
+  } = data;
 
   return (
     <div className="min-h-screen bg-khata-bg tech-grid-bg px-4 py-8">
-      <div className="max-w-3xl mx-auto space-y-6">
+      <div className="max-w-4xl mx-auto space-y-6">
         <div className="text-center">
           <p className="text-khata-muted text-sm uppercase tracking-[0.2em] mb-2">{businessName}</p>
           <h1 className="text-4xl font-heading uppercase tracking-wider text-khata-text">
             Namaste, {client.name}
           </h1>
           <p className="text-khata-muted mt-2">
-            This page shows your current balance, recent purchases, and on-chain debt record.
+            This page shows your outstanding balance, invoices, payments, and on-chain debt record.
           </p>
         </div>
 
-        <div className="bg-khata-surface border-[3px] border-khata-warning p-6">
-          <p className="text-xs uppercase tracking-[0.2em] text-khata-muted mb-2">Outstanding Balance</p>
-          <p className="text-5xl font-heading text-khata-warning">
-            {formatCurrency(Number(client.total_outstanding || 0))}
-          </p>
-          {nft?.dueDate && (
-            <p className="text-sm text-khata-muted mt-3">
-              Due by: {format(new Date(nft.dueDate), 'MMM dd, yyyy')}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="bg-khata-surface border-[3px] border-khata-warning p-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-khata-muted mb-2">Outstanding Balance</p>
+            <p className="text-4xl font-heading text-khata-warning">
+              {formatCurrency(Number(statement?.totalOutstanding ?? client.total_outstanding ?? 0))}
             </p>
-          )}
+            {nft?.dueDate && (
+              <p className="text-sm text-khata-muted mt-3">
+                Due by: {format(new Date(nft.dueDate), 'MMM dd, yyyy')}
+              </p>
+            )}
+          </div>
+          <div className="bg-khata-surface border-[3px] border-khata-accent p-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-khata-muted mb-2">Recovered</p>
+            <p className="text-4xl font-heading text-khata-accent">
+              {formatCurrency(Number(statement?.totalRecovered || 0))}
+            </p>
+          </div>
+          <div className="bg-khata-surface border-[3px] border-khata-border p-6">
+            <p className="text-xs uppercase tracking-[0.2em] text-khata-muted mb-2">Open Invoices</p>
+            <p className="text-4xl font-heading text-khata-text">
+              {Number(statement?.openInvoices || 0)}
+            </p>
+          </div>
         </div>
 
         {nft?.tokenId && (
@@ -192,13 +218,41 @@ export default function ClientPortalPage() {
 
         <div className="bg-khata-surface border-[3px] border-khata-border overflow-hidden">
           <div className="p-6 border-b-[3px] border-khata-border">
+            <h2 className="text-2xl font-heading uppercase tracking-wider text-khata-text">Invoices</h2>
+          </div>
+          <div className="divide-y divide-khata-border">
+            {invoices.length === 0 ? (
+              <div className="p-6 text-khata-muted">No invoices generated yet.</div>
+            ) : (
+              invoices.map((invoice) => (
+                <div key={invoice.id} className="p-6 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-khata-text break-all">{invoice.id}</p>
+                    <p className="text-xs text-khata-muted mt-2 uppercase tracking-wider">
+                      {invoice.status} · Remaining {formatCurrency(Number(invoice.remaining_amount ?? invoice.amount ?? 0))}
+                    </p>
+                    <p className="text-xs text-khata-muted mt-1">
+                      Recovered {formatCurrency(Number(invoice.paid_amount || 0))}
+                    </p>
+                  </div>
+                  <p className="text-lg font-heading text-khata-accent">
+                    {formatCurrency(Number(invoice.original_amount ?? invoice.amount ?? 0))}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="bg-khata-surface border-[3px] border-khata-border overflow-hidden">
+          <div className="p-6 border-b-[3px] border-khata-border">
             <h2 className="text-2xl font-heading uppercase tracking-wider text-khata-text">Your Purchases</h2>
           </div>
           <div className="divide-y divide-khata-border">
-            {transactions.length === 0 ? (
+            {purchases.length === 0 ? (
               <div className="p-6 text-khata-muted">No purchases recorded yet.</div>
             ) : (
-              transactions.map((txn) => (
+              purchases.map((txn) => (
                 <div key={txn.id} className="p-6 flex items-start justify-between gap-4">
                   <div>
                     <p className="text-sm font-bold text-khata-text">
@@ -214,6 +268,31 @@ export default function ClientPortalPage() {
                   </div>
                   <p className="text-lg font-heading text-khata-accent">
                     {formatCurrency(Number(txn.amount || 0))}
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div className="bg-khata-surface border-[3px] border-khata-border overflow-hidden">
+          <div className="p-6 border-b-[3px] border-khata-border">
+            <h2 className="text-2xl font-heading uppercase tracking-wider text-khata-text">Payment History</h2>
+          </div>
+          <div className="divide-y divide-khata-border">
+            {payments.length === 0 ? (
+              <div className="p-6 text-khata-muted">No payments recorded yet.</div>
+            ) : (
+              payments.map((payment) => (
+                <div key={payment.id} className="p-6 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-khata-text">Payment received</p>
+                    <p className="text-xs text-khata-muted mt-2">
+                      {format(new Date(payment.created_at), 'MMM dd, yyyy')}
+                    </p>
+                  </div>
+                  <p className="text-lg font-heading text-khata-accent">
+                    {formatCurrency(Number(payment.amount || 0))}
                   </p>
                 </div>
               ))

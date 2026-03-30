@@ -13,6 +13,10 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
       typeof req.query.status === 'string' && req.query.status.trim()
         ? req.query.status.trim().toUpperCase()
         : null;
+    const search =
+      typeof req.query.search === 'string' && req.query.search.trim()
+        ? req.query.search.trim().toLowerCase()
+        : '';
 
     const { data, error } = await supabase
       .from('invoices')
@@ -28,9 +32,22 @@ router.get('/', async (req: Request, res: Response): Promise<void> => {
 
     if (error) throw error;
 
-    const invoices = status
-      ? (data || []).filter((invoice) => String(invoice.status).toUpperCase() === status)
-      : data || [];
+    const invoices = (data || []).filter((invoice) => {
+      const matchesStatus = status
+        ? String(invoice.status).toUpperCase() === status
+        : true;
+
+      if (!matchesStatus) return false;
+      if (!search) return true;
+
+      return [
+        invoice.id,
+        invoice.clients?.name,
+        invoice.status
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(search));
+    });
 
     res.json({ success: true, invoices });
   } catch (error: any) {
@@ -44,7 +61,7 @@ const invoiceSchema = z.object({
   client_id: z.string().uuid(),
   amount: z.number().min(0),
   items: z.array(z.any()).optional(),
-  status: z.enum(['PENDING', 'MINTED']).optional().default('PENDING')
+  status: z.enum(['PENDING', 'MINTED', 'SETTLED']).optional().default('PENDING')
 });
 
 router.post('/', async (req: Request, res: Response): Promise<void> => {
@@ -56,7 +73,10 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
       .from('invoices')
       .insert({
         business_id: businessId,
-        ...invoiceData
+        ...invoiceData,
+        original_amount: invoiceData.amount,
+        paid_amount: 0,
+        remaining_amount: invoiceData.amount
       })
       .select()
       .single();

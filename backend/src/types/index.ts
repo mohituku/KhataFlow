@@ -92,11 +92,15 @@ export interface Invoice {
   business_id: string;
   client_id: string;
   amount: number;
+  original_amount?: number;
+  paid_amount?: number;
+  remaining_amount?: number;
   status: 'PENDING' | 'MINTED' | 'SETTLED';
   items?: ItemLine[];
   nft_token_id?: string;
   nft_tx_hash?: string;
   due_date?: string;
+  settled_at?: string;
   created_at: string;
 }
 
