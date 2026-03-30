@@ -1,85 +1,274 @@
 import 'dotenv/config';
 import { GoogleGenerativeAI } from '@google/generative-ai';
-import { BusinessCommand } from '../types';
+import { ParsedCommand, ActionUnit } from '../types';
+
+// ─── System prompt ─────────────────────────────────────────────────────────
+// The prompt is the brain. Keep it updated as you add capabilities.
+const SYSTEM_PROMPT = `You are KhataFlow, an intelligent AI agent for Indian kirana and SMB shopkeepers.
+The person messaging you is the business OWNER or admin.
+Any named person in the message is a CUSTOMER unless explicitly stated otherwise.
+Understand Hindi, English, and Hinglish naturally.
+
+═══════════════════════════════════════════════════
+OUTPUT FORMAT — ALWAYS return this exact JSON, nothing else:
+═══════════════════════════════════════════════════
+{
+  "actions": [ ...array of action objects... ],
+  "response": "Full conversational reply in the user's language",
+  "requiresConfirmation": true,
+  "summary": "One-line plain-language summary of what will be done"
+}
+
+Each action object in "actions" follows this schema:
+{
+  "intent": <see intents below>,
+  "clientName": "string or null",
+  "items": [{ "name": "string", "qty": number, "unit": "string", "price": number }],
+  "totalAmount": number or null,
+  "paymentAmount": number or null,
+  "filters": {
+    "minOutstanding": number or null,
+    "maxOutstanding": number or null,
+    "daysSinceLastPayment": number or null,
+    "lowStockOnly": boolean or null,
+    "itemName": "string or null",
+    "dateFrom": "YYYY-MM-DD or null",
+    "dateTo": "YYYY-MM-DD or null"
+  },
+  "invoiceId": "string or null"
+}
+
+═══════════════════════════════════════════════════
+INTENTS — use EXACTLY these strings:
+═══════════════════════════════════════════════════
+ADD_SALE         — Customer bought something on credit
+UPDATE_STOCK     — Add or update inventory stock
+MARK_PAID        — Customer paid money
+QUERY_LEDGER     — Query outstanding balances
+QUERY_STOCK      — Query inventory levels
+GENERATE_REPORT  — Business analytics / summary
+GENERATE_INVOICE — Create/show an invoice
+UNKNOWN          — Cannot map to any above
+
+═══════════════════════════════════════════════════
+CRITICAL RULES:
+═══════════════════════════════════════════════════
+
+MULTI-ACTION MESSAGES:
+- If the message mentions MULTIPLE customers doing DIFFERENT things, return MULTIPLE actions.
+- Example: "Ramesh ne 200 diya aur Suresh ne 500 diya" → 2 MARK_PAID actions
+- Example: "Ramesh ne aloo liya aur chawal ka stock add karo" → 1 ADD_SALE + 1 UPDATE_STOCK
+- NEVER silently drop part of a message. If it's complex, split it.
+
+MULTI-ITEM SINGLE ACTION:
+- "Ramesh ne 5kg aloo aur 3kg pyaaz liya, total 350 baaki" → 1 ADD_SALE with items: [{aloo,5,kg}, {pyaaz,3,kg}]
+- Include ALL items in the items array, not just the first.
+- "100kg rice, 50kg wheat, 20kg dal stock me add karo" → 1 UPDATE_STOCK with 3 items
+
+FILTER QUERIES:
+- "Clients who owe more than 1000" → QUERY_LEDGER, filters.minOutstanding: 1000
+- "Who hasn't paid in 30 days" → QUERY_LEDGER, filters.daysSinceLastPayment: 30
+- "Low stock items" → QUERY_STOCK, filters.lowStockOnly: true
+- "How much rice do we have" → QUERY_STOCK, filters.itemName: "rice"
+- "Today's sales" → GENERATE_REPORT, filters.dateFrom: today, filters.dateTo: today
+- "This week's total" → GENERATE_REPORT with appropriate date range
+
+AMOUNTS & NAMES:
+- "baaki", "udhaar", "khate me" = credit → ADD_SALE
+- "paise nahi diye", "nhi diye" = they didn't pay = credit → ADD_SALE
+- "de diye", "cash diya", "payment" = they paid → MARK_PAID
+- totalAmount = amount of the credit/sale
+- paymentAmount = cash received from customer
+- clientName = the customer name, never the owner
+
+RESPONSE LANGUAGE:
+- Match the user's language (Hindi, English, Hinglish)
+- Be conversational and friendly, not robotic
+- For WRITE operations, confirm what was done and show new balance
+- For READ operations, present data naturally in sentences
+- requiresConfirmation = true for ADD_SALE, UPDATE_STOCK, MARK_PAID
+- requiresConfirmation = false for QUERY_*, GENERATE_*
+
+═══════════════════════════════════════════════════
+EXAMPLES:
+═══════════════════════════════════════════════════
+
+Input: "Ramesh ne 5kg aloo aur 3kg pyaaz liya, total 350 baaki"
+Output:
+{
+  "actions": [{
+    "intent": "ADD_SALE",
+    "clientName": "Ramesh",
+    "items": [{"name":"aloo","qty":5,"unit":"kg","price":0},{"name":"pyaaz","qty":3,"unit":"kg","price":0}],
+    "totalAmount": 350,
+    "paymentAmount": null,
+    "filters": {}
+  }],
+  "response": "Ramesh ka ₹350 udhar add ho gaya. Aloo 5kg aur pyaaz 3kg record ho gaya.",
+  "requiresConfirmation": true,
+  "summary": "Add ₹350 credit for Ramesh (5kg aloo, 3kg pyaaz)"
+}
+
+Input: "Ramesh ne 200 diya aur Suresh ne 500 diya"
+Output:
+{
+  "actions": [
+    {"intent":"MARK_PAID","clientName":"Ramesh","paymentAmount":200,"items":[],"totalAmount":null,"filters":{}},
+    {"intent":"MARK_PAID","clientName":"Suresh","paymentAmount":500,"items":[],"totalAmount":null,"filters":{}}
+  ],
+  "response": "Done! Ramesh ki ₹200 aur Suresh ki ₹500 payment record ho gayi.",
+  "requiresConfirmation": true,
+  "summary": "Record payment ₹200 from Ramesh, ₹500 from Suresh"
+}
+
+Input: "100kg rice, 50kg wheat, 20kg dal stock me add karo"
+Output:
+{
+  "actions": [{
+    "intent": "UPDATE_STOCK",
+    "clientName": null,
+    "items": [
+      {"name":"rice","qty":100,"unit":"kg","price":0},
+      {"name":"wheat","qty":50,"unit":"kg","price":0},
+      {"name":"dal","qty":20,"unit":"kg","price":0}
+    ],
+    "totalAmount": null,
+    "paymentAmount": null,
+    "filters": {}
+  }],
+  "response": "Stock update ho gaya! Rice 100kg, wheat 50kg, dal 20kg add kar diya.",
+  "requiresConfirmation": true,
+  "summary": "Add stock: 100kg rice, 50kg wheat, 20kg dal"
+}
+
+Input: "Clients who owe more than 1000 rupees"
+Output:
+{
+  "actions": [{
+    "intent": "QUERY_LEDGER",
+    "clientName": null,
+    "items": [],
+    "totalAmount": null,
+    "paymentAmount": null,
+    "filters": {"minOutstanding": 1000}
+  }],
+  "response": "Checking clients with outstanding balance above ₹1000...",
+  "requiresConfirmation": false,
+  "summary": "Query clients with balance > ₹1000"
+}
+
+Input: "What is low stock? And how much rice do we have?"
+Output:
+{
+  "actions": [
+    {"intent":"QUERY_STOCK","clientName":null,"items":[],"totalAmount":null,"paymentAmount":null,"filters":{"lowStockOnly":true}},
+    {"intent":"QUERY_STOCK","clientName":null,"items":[],"totalAmount":null,"paymentAmount":null,"filters":{"itemName":"rice"}}
+  ],
+  "response": "Checking low stock items and rice quantity...",
+  "requiresConfirmation": false,
+  "summary": "Query low stock items and rice inventory"
+}
+
+Input: "Show me today's revenue"
+Output:
+{
+  "actions": [{
+    "intent": "GENERATE_REPORT",
+    "clientName": null,
+    "items": [],
+    "totalAmount": null,
+    "paymentAmount": null,
+    "filters": {"dateFrom": "TODAY", "dateTo": "TODAY"}
+  }],
+  "response": "Aaj ki sales summary dekh raha hoon...",
+  "requiresConfirmation": false,
+  "summary": "Generate today's revenue report"
+}`;
 
 class GeminiService {
   private genAI: GoogleGenerativeAI | null = null;
   private modelNames: string[] = [];
+  private emergentKey: string | null = null;
+  private activeProvider: 'emergent' | 'gemini' | null = null;
 
   constructor() {
-    const apiKey = process.env.GEMINI_API_KEY;
-    
-    if (!apiKey) {
-      console.warn('⚠️  Gemini API key not found. AI parsing will return mock responses.');
-      return;
+    this.emergentKey = (process.env.EMERGENT_LLM_KEY || '').trim() || null;
+    const userApiKey = (process.env.GEMINI_API_KEY || '').trim() || null;
+
+    const providers: Array<{
+      name: 'emergent' | 'gemini';
+      key: string | null;
+      modelNames: string[];
+      label: string;
+    }> = [
+      {
+        name: 'emergent',
+        key: this.emergentKey,
+        modelNames: [
+          'gemini-2.0-flash-exp',
+          'gemini-1.5-flash',
+          'gemini-1.5-pro'
+        ],
+        label: 'Emergent LLM key'
+      },
+      {
+        name: 'gemini',
+        key: userApiKey,
+        modelNames: [
+          process.env.GEMINI_MODEL,
+          'gemini-2.5-flash',
+          'gemini-2.0-flash-exp',
+          'gemini-1.5-flash'
+        ].filter((v, i, a): v is string => Boolean(v) && a.indexOf(v) === i),
+        label: 'Gemini API key'
+      }
+    ];
+
+    for (const provider of providers) {
+      if (!provider.key) continue;
+
+      try {
+        this.genAI = new GoogleGenerativeAI(provider.key);
+        this.modelNames = provider.modelNames;
+        this.activeProvider = provider.name;
+        console.log(`✅ Gemini initialized with ${provider.label}`);
+        break;
+      } catch (error) {
+        console.warn(`⚠️  Failed to initialize with ${provider.label}`);
+      }
     }
 
-    try {
-      this.genAI = new GoogleGenerativeAI(apiKey);
-      this.modelNames = [
-        process.env.GEMINI_MODEL,
-        'gemini-3-pro-preview',
-        'gemini-2.5-pro',
-        'gemini-2.5-flash'
-      ].filter((value, index, array): value is string => Boolean(value) && array.indexOf(value) === index);
-    } catch (error) {
-      console.error('Failed to initialize Gemini:', error);
+    if (!this.genAI || this.modelNames.length === 0) {
+      console.warn('⚠️  No valid Gemini API key found. AI parsing will return mock responses.');
     }
   }
 
-  async parseBusinessCommand(
+  getStatus() {
+    return {
+      configured: Boolean(this.genAI && this.modelNames.length > 0),
+      mode: this.genAI && this.modelNames.length > 0 ? 'live' : 'mock-fallback',
+      checkpoint: this.genAI && this.modelNames.length > 0 ? 'gemini-ready' : 'gemini-mock-fallback',
+      activeProvider: this.activeProvider,
+      keySources: {
+        emergent: Boolean(this.emergentKey),
+        gemini: Boolean((process.env.GEMINI_API_KEY || '').trim())
+      },
+      modelCandidates: this.modelNames
+    };
+  }
+
+  async parseCommand(
     message: string,
     conversationHistory: Array<{ role: string; content: string }> = []
-  ): Promise<BusinessCommand> {
-    // If Gemini is not initialized, return mock response
+  ): Promise<ParsedCommand> {
     if (!this.genAI || this.modelNames.length === 0) {
-      return this.getMockResponse(message);
+      return this.getMockParsedCommand(message);
     }
-
-    const systemPrompt = `You are KhataFlow, an AI assistant for Indian kirana and SMB shopkeepers.
-The person messaging you is always the business owner or shop admin using KhataFlow.
-Any named person in the message is usually a customer/client unless explicitly stated otherwise.
-Understand Hindi, English, and Hinglish.
-
-Return ONLY valid JSON. No markdown. No explanation.
-
-Schema:
-{
-  "intent": "ADD_SALE" | "UPDATE_STOCK" | "QUERY_LEDGER" | "MARK_PAID" | "UNKNOWN",
-  "response": "Friendly reply in the same language the user used",
-  "clientName": "string or null",
-  "items": [{ "name": "string", "qty": number, "unit": "string", "price": number }],
-  "totalAmount": number or null,
-  "paymentAmount": number or null
-}
-
-Rules:
-- "baaki", "udhaar", "khate me likh" means credit sale → ADD_SALE
-- "diya", "payment kiya", "cash diya", "settle kar diya" means payment received → MARK_PAID
-- "paise nahi diye", "nhi diye", "khate me daal do", "balance daal do" means credit sale → ADD_SALE
-- "stock", "inventory", "add karo", "bhar do" means inventory update → UPDATE_STOCK
-- "khata dikhao", "kitna baaki", "ledger dikhao" means ledger query → QUERY_LEDGER
-- "kis kis se lena hai", "total udhar", "who owes me", "overall ledger" means overall ledger query → QUERY_LEDGER with clientName = null
-- Speak to the business owner/admin in the response, not to the customer
-- "my", "mera", "hamara", and "our shop" refer to the shopkeeper's business context
-- Treat customer names as clientName whenever a sale/payment/ledger request mentions another person
-- totalAmount = amount sold on credit
-- paymentAmount = money received against an existing balance
-- clientName should be null if no name is clearly present
-- items should be [] when not relevant
-- Preserve the user's language style in response
-
-Examples:
-"Ramesh ne 5kg aloo liya, 200 baaki hai" => {"intent":"ADD_SALE","clientName":"Ramesh","items":[{"name":"aloo","qty":5,"unit":"kg","price":40}],"totalAmount":200,"paymentAmount":null}
-"sunno, ramesh bhai ne sugar leke gaye par paise nhi diye toh unka balance 100 rs khate me daaldo" => {"intent":"ADD_SALE","clientName":"Ramesh Bhai","items":[{"name":"sugar","qty":1,"unit":"item","price":100}],"totalAmount":100,"paymentAmount":null}
-"Priya ne 500 de diye" => {"intent":"MARK_PAID","clientName":"Priya","items":[],"totalAmount":null,"paymentAmount":500}
-"chawal ka stock 100kg add karo" => {"intent":"UPDATE_STOCK","clientName":null,"items":[{"name":"chawal","qty":100,"unit":"kg","price":0}],"totalAmount":null,"paymentAmount":null}
-"Suresh ka khata dikhao" => {"intent":"QUERY_LEDGER","clientName":"Suresh","items":[],"totalAmount":null,"paymentAmount":null}
-"total udhar mujhe kisskiss se lene hai ?" => {"intent":"QUERY_LEDGER","clientName":null,"items":[],"totalAmount":null,"paymentAmount":null}`;
 
     for (const modelName of this.modelNames) {
       try {
         const model = this.genAI.getGenerativeModel({ model: modelName });
+
         const chat = model.startChat({
           history: conversationHistory.map((msg) => ({
             role: msg.role === 'user' ? 'user' : 'model',
@@ -87,9 +276,10 @@ Examples:
           }))
         });
 
-        const prompt = `${systemPrompt}\n\nUser message: "${message}"\n\nParse this and return JSON only.`;
+        const prompt = `${SYSTEM_PROMPT}\n\nUser message: "${message}"\n\nReturn JSON only.`;
         const result = await chat.sendMessage(prompt);
         const text = result.response.text();
+
         const cleaned = text
           .replace(/^```json\s*/i, '')
           .replace(/```\s*$/i, '')
@@ -97,197 +287,79 @@ Examples:
 
         const parsed = JSON.parse(cleaned);
 
-        return {
-          ...parsed,
-          items: Array.isArray(parsed.items) ? parsed.items : []
-        };
+        // Validate structure
+        if (!Array.isArray(parsed.actions) || parsed.actions.length === 0) {
+          throw new Error('Invalid response: actions must be a non-empty array');
+        }
+
+        // Normalize: ensure each action has items array and filters object
+        parsed.actions = parsed.actions.map((action: ActionUnit) => ({
+          ...action,
+          items: Array.isArray(action.items) ? action.items : [],
+          filters: action.filters || {}
+        }));
+
+        // Replace TODAY placeholder in dates
+        const today = new Date().toISOString().split('T')[0];
+        parsed.actions = parsed.actions.map((action: ActionUnit) => ({
+          ...action,
+          filters: {
+            ...action.filters,
+            dateFrom: action.filters?.dateFrom === 'TODAY' ? today : action.filters?.dateFrom,
+            dateTo: action.filters?.dateTo === 'TODAY' ? today : action.filters?.dateTo
+          }
+        }));
+
+        console.log(`✅ Parsed with ${modelName}:`, JSON.stringify(parsed, null, 2));
+        return parsed as ParsedCommand;
       } catch (error) {
-        console.error(`Gemini parsing error with ${modelName}:`, error);
+        console.error(`❌ Gemini parse error with ${modelName}:`, error);
       }
     }
 
-    return this.getMockResponse(message);
+    return this.getMockParsedCommand(message);
   }
 
-  private getMockResponse(message: string): BusinessCommand {
-    const lowerMsg = message.toLowerCase();
-    const clientName = this.extractClientName(message);
-    const amount = this.extractAmount(message);
-    const items = this.extractItems(message);
-    const isInventoryIntent = this.containsAny(lowerMsg, ['stock', 'inventory', 'bhar do', 'refill']);
-    const isLedgerIntent = this.containsAny(lowerMsg, [
-      'khata',
-      'ledger',
-      'dikhao',
-      'udhar kitna',
-      'udhaar kitna',
-      'who owes',
-      'kis kis se',
-      'kisskiss se',
-      'total udhar',
-      'total udhaar'
-    ]);
-    const isNegativePaymentPhrase = this.containsAny(lowerMsg, [
-      'nahi diye',
-      'nhi diye',
-      'paise nahi diye',
-      'paise nhi diye',
-      'khate me daal',
-      'khata me daal',
-      'balance daal'
-    ]);
-    const isSaleIntent = this.containsAny(lowerMsg, [
-      'udhaar',
-      'udhar',
-      'liya',
-      'liye',
-      'leke gaye',
-      'le gaya',
-      'baaki',
-      'baki',
-      'khate me',
-      'khata me'
-    ]) || isNegativePaymentPhrase;
-    const isPaymentIntent = this.containsAny(lowerMsg, [
-      'paid',
-      'payment',
-      'de diye',
-      'de diya',
-      'cash diya',
-      'settle kar diya',
-      'jama kar diya'
-    ]) && !isNegativePaymentPhrase;
-
-    if (isInventoryIntent) {
-      return {
-        intent: 'UPDATE_STOCK',
-        response: 'Main aapka inventory update kar raha hoon.',
-        items,
-        clientName: undefined
-      };
-    }
-
-    if (isLedgerIntent) {
-      return {
-        intent: 'QUERY_LEDGER',
-        response: clientName
-          ? `Main ${clientName} ka khata dekh raha hoon.`
-          : 'Main aapka poora udhar summary dekh raha hoon.',
-        clientName
-      };
-    }
-
-    if (isSaleIntent) {
-      return {
-        intent: 'ADD_SALE',
-        response: clientName
-          ? `Main ${clientName} ka udhar khate me add kar raha hoon.`
-          : 'Main is udhar ko khate me add kar raha hoon.',
-        clientName,
-        items,
-        totalAmount: amount
-      };
-    }
-
-    if (isPaymentIntent) {
-      return {
-        intent: 'MARK_PAID',
-        response: clientName
-          ? `Main ${clientName} ki payment record kar raha hoon.`
-          : 'Main payment record kar raha hoon.',
-        clientName,
-        paymentAmount: amount
-      };
-    }
-
+  // Keep old method as alias for backward compatibility
+  async parseBusinessCommand(
+    message: string,
+    conversationHistory: Array<{ role: string; content: string }> = []
+  ) {
+    const parsed = await this.parseCommand(message, conversationHistory);
+    const first = parsed.actions[0];
     return {
-      intent: 'UNKNOWN',
-      response: 'I could not clearly map that to a sale, payment, stock update, or ledger query. Please restate it with the client name and amount.'
+      ...first,
+      response: parsed.response,
+      intent: first?.intent || 'UNKNOWN'
     };
   }
 
-  private extractClientName(message: string): string | undefined {
-    const patterns = [
-      /\b([A-Za-z][A-Za-z\s]{1,40}?)\s+ne\b/i,
-      /\b([A-Za-z][A-Za-z\s]{1,40}?)\s+(?:paid|gave|purchased|took|owes)\b/i,
-      /\bfor\s+([A-Za-z][A-Za-z\s]{1,40}?)(?:\s|$)/i,
-      /\bof\s+([A-Za-z][A-Za-z\s]{1,40}?)(?:\s|$)/i
-    ];
+  private getMockParsedCommand(message: string): ParsedCommand {
+    const lowerMsg = message.toLowerCase();
+    const isStock = this.has(lowerMsg, ['stock', 'inventory', 'bhar do', 'kitna hai', 'how much', 'low stock']);
+    const isSale = this.has(lowerMsg, ['liya', 'liye', 'udhaar', 'udhar', 'baaki', 'khate me', 'nhi diye', 'nahi diye']);
+    const isPaid = this.has(lowerMsg, ['diya', 'de diye', 'paid', 'payment', 'cash diya']);
+    const isLedger = this.has(lowerMsg, ['khata', 'ledger', 'dikhao', 'who owes', 'kitna baaki', 'outstanding']);
+    const isReport = this.has(lowerMsg, ['report', 'revenue', 'today', 'aaj', 'week', 'summary']);
 
-    for (const pattern of patterns) {
-      const match = message.match(pattern);
-      if (match?.[1]) {
-        return this.toDisplayName(match[1]);
-      }
-    }
+    let intent: ActionUnit['intent'] = 'UNKNOWN';
+    if (isStock && this.has(lowerMsg, ['low', 'kam', 'khatam'])) intent = 'QUERY_STOCK';
+    else if (isStock) intent = 'UPDATE_STOCK';
+    else if (isSale) intent = 'ADD_SALE';
+    else if (isPaid) intent = 'MARK_PAID';
+    else if (isLedger) intent = 'QUERY_LEDGER';
+    else if (isReport) intent = 'GENERATE_REPORT';
 
-    return undefined;
+    return {
+      actions: [{ intent, clientName: null, items: [], filters: {} }],
+      response: 'Gemini unavailable. Please configure GEMINI_API_KEY or EMERGENT_LLM_KEY for full intelligence.',
+      requiresConfirmation: ['ADD_SALE', 'UPDATE_STOCK', 'MARK_PAID'].includes(intent),
+      summary: `Detected intent: ${intent}`
+    };
   }
 
-  private extractAmount(message: string): number | undefined {
-    const currencyMatches = Array.from(message.matchAll(/(?:₹|rs\.?|inr)\s*(\d+(?:\.\d+)?)/gi));
-    if (currencyMatches.length > 0) {
-      return Number(currencyMatches[currencyMatches.length - 1][1]);
-    }
-
-    const numericMatches = Array.from(message.matchAll(/(\d+(?:\.\d+)?)/g));
-    if (numericMatches.length === 0) {
-      return undefined;
-    }
-
-    return Number(numericMatches[numericMatches.length - 1][1]);
-  }
-
-  private extractItems(message: string): BusinessCommand['items'] {
-    const sanitizedMessage = message.replace(
-      /(?:(?:₹|rs\.?|inr)\s*\d+(?:\.\d+)?)|(?:\d+(?:\.\d+)?\s*(?:₹|rs\.?|inr))/gi,
-      ' '
-    );
-
-    const quantifiedItemMatch = sanitizedMessage.match(/(\d+(?:\.\d+)?)\s*(kg|g|gm|pcs|pc|pieces|piece|l|ltr|litre|litres|packet|packets)?\s+([A-Za-z][A-Za-z\s]{1,40}?)(?:\s+(?:liya|liye|add|stock|baki|baaki|udhaar)|$)/i);
-
-    if (quantifiedItemMatch) {
-      return [
-        {
-          name: this.toDisplayName(quantifiedItemMatch[3].trim()),
-          qty: Number(quantifiedItemMatch[1]),
-          unit: (quantifiedItemMatch[2] || 'pcs').toLowerCase(),
-          price: 0
-        }
-      ];
-    }
-
-    const plainItemMatch = sanitizedMessage.match(/\b([A-Za-z][A-Za-z\s]{1,40}?)\s+(?:leke gaye|le gaya|liya|liye|stock|inventory|add karo)\b/i);
-
-    if (plainItemMatch) {
-      const rawName = plainItemMatch[1].trim();
-      const normalizedName = rawName.includes(' ne ')
-        ? rawName.split(/\s+ne\s+/i).pop() || rawName
-        : rawName;
-
-      return [
-        {
-          name: this.toDisplayName(normalizedName),
-          qty: 1,
-          unit: 'item',
-          price: 0
-        }
-      ];
-    }
-
-    return [];
-  }
-
-  private toDisplayName(value: string): string {
-    return value
-      .trim()
-      .split(/\s+/)
-      .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-      .join(' ');
-  }
-
-  private containsAny(value: string, phrases: string[]) {
-    return phrases.some((phrase) => value.includes(phrase));
+  private has(value: string, phrases: string[]) {
+    return phrases.some((p) => value.includes(p));
   }
 }
 

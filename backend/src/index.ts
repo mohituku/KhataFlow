@@ -8,6 +8,7 @@ import invoicesRouter from './routes/invoices';
 import chainRouter from './routes/chain';
 import clientRouter from './routes/client';
 import { businessIdMiddleware } from './middleware/businessId';
+import { geminiService } from './services/gemini';
 
 const app: Application = express();
 const PORT = process.env.PORT || 8001;
@@ -34,6 +35,16 @@ app.get('/health', (req: Request, res: Response) => {
     status: 'ok',
     service: 'KhataFlow Backend',
     chain: 'flow-evm-testnet',
+    timestamp: new Date().toISOString(),
+    ai: geminiService.getStatus()
+  });
+});
+
+app.get('/health/ai', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    service: 'KhataFlow Backend',
+    ai: geminiService.getStatus(),
     timestamp: new Date().toISOString()
   });
 });
@@ -63,7 +74,9 @@ app.get('/api', (req: Request, res: Response) => {
       'POST /api/chain/record-mint',
       'GET /api/chain/token/:tokenId',
       'GET /api/client/:businessId/:clientId',
-      'POST /api/client/:businessId/:clientId/confirm-payment'
+      'POST /api/client/:businessId/:clientId/confirm-payment',
+      'GET /health',
+      'GET /health/ai'
     ]
   });
 });
@@ -93,7 +106,8 @@ app.listen(PORT, () => {
   console.log(`📡 API base: http://localhost:${PORT}/api`);
   console.log(`\n⚡ Environment:`);
   console.log(`   - Supabase: ${process.env.SUPABASE_URL ? '✅ Configured' : '❌ Not configured'}`);
-  console.log(`   - Gemini AI: ${process.env.GEMINI_API_KEY ? '✅ Configured' : '❌ Not configured (using mocks)'}`);
+  const aiStatus = geminiService.getStatus();
+  console.log(`   - Gemini AI: ${aiStatus.configured ? `✅ ${aiStatus.activeProvider || 'configured'} (${aiStatus.checkpoint})` : `❌ Not configured (${aiStatus.checkpoint})`}`);
   console.log(`   - Flow EVM: ${process.env.FLOW_EVM_RPC || 'https://testnet.evm.nodes.onflow.org'}`);
   console.log('\n');
 });
