@@ -33,10 +33,10 @@ export const ChatInterface = () => {
             </p>
             <div className="mt-6 grid grid-cols-2 gap-3 max-w-xl">
               {[
-                'Record Ramesh gave ₹500',
-                'Show inventory status',
-                'Generate invoice for Priya',
-                'Check pending payments'
+                'Ramesh ne 5kg aloo aur 3kg pyaaz liya, total 350 baaki',
+                'Ramesh ne 200 diya aur Suresh ne 500 diya',
+                '100kg rice aur 50kg wheat stock me add karo',
+                'Total udhar mujhe kisskiss se lene hai?'
               ].map((example, i) => (
                 <div
                   key={i}

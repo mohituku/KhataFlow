@@ -8,9 +8,7 @@ export const useAgent = () => {
 
   const sendMessage = async (message) => {
     const trimmedMessage = message.trim();
-    if (!trimmedMessage) {
-      return;
-    }
+    if (!trimmedMessage) return;
 
     setIsLoading(true);
 
@@ -28,18 +26,22 @@ export const useAgent = () => {
         body: JSON.stringify({
           message: trimmedMessage,
           conversationHistory: [...conversationHistory, userMessage]
-            .slice(-10)
-            .map((entry) => ({
-              role: entry.role,
-              content: entry.content
-            }))
+            .slice(-12)  // slightly more context
+            .map((entry) => ({ role: entry.role, content: entry.content }))
         })
       });
 
+      const responseText =
+        data.parsedCommand?.response ||
+        data.action?.response ||
+        'Done!';
+
       addMessage({
         role: 'ai',
-        content: data.action?.response || 'Done!',
+        content: responseText,
         action: data.action,
+        parsedCommand: data.parsedCommand,
+        actionResults: data.actionResults,
         dbResult: data.dbResult,
         timestamp: new Date().toISOString()
       });
@@ -47,7 +49,7 @@ export const useAgent = () => {
       console.error('Agent error:', error);
       addMessage({
         role: 'ai',
-        content: `Error: ${error.message}. Make sure the backend is running on port 8001.`,
+        content: `Error: ${error.message}`,
         timestamp: new Date().toISOString()
       });
     } finally {
