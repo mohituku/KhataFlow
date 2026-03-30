@@ -203,6 +203,69 @@ router.get('/activity', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+router.get('/notifications', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const businessId = getBusinessId(req);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 50);
+
+    const { data: notifications, error } = await supabase
+      .from('notifications')
+      .select(`
+        id,
+        type,
+        title,
+        body,
+        channel,
+        sent,
+        read,
+        created_at,
+        metadata,
+        clients:client_id (
+          id,
+          name
+        )
+      `)
+      .eq('business_id', businessId)
+      .order('created_at', { ascending: false })
+      .limit(limit);
+
+    if (error) throw error;
+
+    const unreadCount = (notifications || []).filter((notification) => !notification.read).length;
+
+    res.json({
+      success: true,
+      notifications: notifications || [],
+      unreadCount
+    });
+  } catch (error: any) {
+    console.error('Get notifications error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
+router.post('/notifications/mark-all-read', async (req: Request, res: Response): Promise<void> => {
+  try {
+    const businessId = getBusinessId(req);
+
+    const { error } = await supabase
+      .from('notifications')
+      .update({
+        read: true,
+        read_at: new Date().toISOString()
+      })
+      .eq('business_id', businessId)
+      .eq('read', false);
+
+    if (error) throw error;
+
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Mark notifications read error:', error);
+    res.status(500).json({ success: false, error: error.message });
+  }
+});
+
 // Get client details with transactions
 router.get('/clients/:clientId', async (req: Request, res: Response): Promise<void> => {
   try {

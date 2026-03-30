@@ -1,6 +1,14 @@
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { CheckCircle, ExternalLink, Loader2, Share2, QrCode, Wallet } from 'lucide-react';
+import {
+  CheckCircle,
+  CreditCard,
+  ExternalLink,
+  Loader2,
+  QrCode,
+  Share2,
+  Wallet
+} from 'lucide-react';
 import { format } from 'date-fns';
 import { getApiUrl } from '../lib/api';
 import { formatCurrency } from '../lib/formatters';
@@ -22,6 +30,15 @@ export default function ClientPortalPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [onChainPayments, setOnChainPayments] = useState([]);
   const accessToken = searchParams.get('token') || '';
+
+  const openPaymentGateway = (tokenType) => {
+    if (!accessToken) {
+      toast.error('This link is missing payment access');
+      return;
+    }
+
+    window.location.href = `/pay/${clientId}?token=${encodeURIComponent(accessToken)}&tokenType=${encodeURIComponent(tokenType)}`;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -240,6 +257,49 @@ export default function ClientPortalPage() {
           </div>
         </div>
 
+        <div className="bg-khata-surface border-[3px] border-khata-chain p-6">
+          <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-6">
+            <div className="max-w-2xl">
+              <p className="text-xs uppercase tracking-[0.2em] text-khata-chain mb-2 font-bold">
+                Payment Gateway
+              </p>
+              <h2 className="text-2xl font-heading uppercase tracking-wider text-khata-text">
+                Pay online or confirm offline payment
+              </h2>
+              <p className="text-sm text-khata-muted mt-3">
+                Use the same payment choices available in Telegram. On-chain payments are recorded automatically.
+                Cash or UPI can be reported to the shopkeeper from this page.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 lg:min-w-[28rem]">
+              <button
+                onClick={() => openPaymentGateway('USDC')}
+                className="px-4 py-4 bg-khata-accent text-khata-bg border-[3px] border-khata-bg font-bold uppercase tracking-wider hover:scale-[1.02] transition-all"
+                style={{ boxShadow: '0 0 15px rgba(0, 208, 132, 0.35)' }}
+              >
+                <span className="block text-xs uppercase tracking-[0.2em] opacity-80 mb-1">Stablecoin</span>
+                Pay with USDC
+              </button>
+              <button
+                onClick={() => openPaymentGateway('FLOW')}
+                className="px-4 py-4 bg-khata-chain text-white border-[3px] border-khata-bg font-bold uppercase tracking-wider hover:scale-[1.02] transition-all"
+                style={{ boxShadow: '0 0 15px rgba(79, 70, 229, 0.35)' }}
+              >
+                <span className="block text-xs uppercase tracking-[0.2em] opacity-80 mb-1">Native Token</span>
+                Pay with FLOW
+              </button>
+              <button
+                onClick={() => setShowPaymentDialog(true)}
+                className="px-4 py-4 bg-transparent text-khata-text border-[3px] border-khata-border font-bold uppercase tracking-wider hover:border-khata-accent hover:text-khata-accent transition-all"
+              >
+                <span className="block text-xs uppercase tracking-[0.2em] text-khata-muted mb-1">Cash / UPI</span>
+                I Have Paid
+              </button>
+            </div>
+          </div>
+        </div>
+
         {nft?.tokenId && (
           <div className="bg-khata-surface border-[3px] border-khata-chain p-6">
             <p className="text-xs uppercase tracking-[0.2em] text-khata-chain mb-2 font-bold">
@@ -367,9 +427,7 @@ export default function ClientPortalPage() {
                         </p>
                         {invoice.status === 'PENDING' && Number(invoice.remaining_amount || invoice.amount) > 0 && (
                           <button
-                            onClick={() => {
-                              window.location.href = `/pay/${clientId}`;
-                            }}
+                            onClick={() => openPaymentGateway('USDC')}
                             className="px-3 py-1.5 bg-khata-accent text-khata-bg text-xs font-bold uppercase tracking-wider hover:scale-105 transition-transform"
                           >
                             Pay Now
@@ -525,7 +583,34 @@ export default function ClientPortalPage() {
             </DialogTitle>
           </DialogHeader>
 
-          <div className="space-y-4">
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <button
+                  onClick={() => openPaymentGateway('USDC')}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-khata-accent text-khata-bg border-[3px] border-khata-bg font-bold uppercase tracking-wider"
+                >
+                  <CreditCard className="w-4 h-4" />
+                  Pay with USDC
+                </button>
+                <button
+                  onClick={() => openPaymentGateway('FLOW')}
+                  className="flex items-center justify-center gap-2 px-4 py-3 bg-khata-chain text-white border-[3px] border-khata-bg font-bold uppercase tracking-wider"
+                >
+                  <Wallet className="w-4 h-4" />
+                  Pay with FLOW
+                </button>
+              </div>
+
+              <div className="p-4 bg-khata-bg border-[2px] border-khata-border">
+                <p className="text-sm text-khata-text font-bold uppercase tracking-wider mb-1">
+                  Already paid offline?
+                </p>
+                <p className="text-sm text-khata-muted">
+                  Fill the details below for cash, UPI, or bank transfer so the shopkeeper gets a confirmation in
+                  both the dashboard and Telegram.
+                </p>
+              </div>
+
             <div>
               <label className="text-xs uppercase tracking-wider text-khata-muted block mb-2 font-bold">
                 Amount Paid

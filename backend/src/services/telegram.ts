@@ -30,6 +30,27 @@ function getPublicFrontendUrl() {
   }
 }
 
+function isLocalOnlyUrl(url: string) {
+  try {
+    const parsed = new URL(url);
+    return ['localhost', '127.0.0.1', '0.0.0.0'].includes(parsed.hostname);
+  } catch {
+    return false;
+  }
+}
+
+function parseQuantityInput(input: string) {
+  const match = input.trim().match(/^(\d+(?:\.\d+)?)\s*([a-zA-Z]+)?$/);
+  if (!match) {
+    return null;
+  }
+
+  return {
+    quantity: Number(match[1]),
+    unit: match[2] || null
+  };
+}
+
 // ============================================
 // ADMIN BOT HANDLERS
 // ============================================
@@ -115,6 +136,14 @@ adminBot.start(async (ctx: any) => {
 adminBot.on(message('text'), async (ctx: any) => {
   const telegramId = String(ctx.from!.id);
   const messageText = ctx.message.text;
+
+  if (messageText.startsWith('/')) {
+    await ctx.reply(
+      'This is the shopkeeper admin bot.\n\n' +
+      'Client commands like /orders, /pay, /balance, and /history only work in the client bot after the customer scans their QR code.'
+    );
+    return;
+  }
 
   // Resolve business from telegram admin ID
   const { data: business } = await supabase
@@ -233,66 +262,136 @@ clientBot.command('balance', async (ctx: any) => {
 });
 
 clientBot.command('orders', async (ctx: any) => {
+  try {
+    const telegramId = String(ctx.from!.id);
+    const client = await getClientByTelegramId(telegramId);
+    
+    if (!client) {
+      return ctx.reply('❌ Account not linked. Ask your shopkeeper to share your client QR first.');
+    }
+
+    const { data: inventory } = await supabase
+      .from('inventory')
+      .select('id, item_name, quantity, unit, price_per_unit')
+      .eq('business_id', client.business_id)
+      .gt('quantity', 0)
+      .order('item_name');
+
+    if (!inventory || inventory.length === 0) {
+      return ctx.reply('No items available right now.');
+    }
+
+    const itemList = inventory
+      .slice(0, 8)
+      .map((item: any, i: number) =>
+        `${i + 1}. *${item.item_name}* — ${item.quantity}${item.unit} available` +
+        (item.price_per_unit ? ` @ ₹${item.price_per_unit}/${item.unit}` : '')
+      )
+      .join('\n');
+
+    const keyboard = inventory.slice(0, 8).map((item: any) => ([
+      Markup.button.callback(
+        `Order ${item.item_name}`.slice(0, 30),
+        `ORDER:${item.id}`
+      )
+    ]));
+
+    await ctx.reply(
+      `🛒 *Available Items*\n\n${itemList}\n\nTap an item to order:`,
+      { parse_mode: 'Markdown', ...Markup.inlineKeyboard(keyboard) }
+    );
+  } catch (error: any) {
+    console.error('Client /orders error:', error);
+    await ctx.reply(`❌ Could not load orders right now: ${error.message}`);
+  }
+});
+
+clientBot.action(/ORDER:(.+)/, async (ctx: any) => {
+  const [, inventoryId] = ctx.match;
   const telegramId = String(ctx.from!.id);
   const client = await getClientByTelegramId(telegramId);
-  
+
   if (!client) {
-    return ctx.reply('❌ Account not linked.');
+    return ctx.answerCbQuery('Client not found');
   }
 
-  // Fetch available inventory from their shopkeeper
-  const { data: inventory } = await supabase
+  const { data: item, error: itemError } = await supabase
     .from('inventory')
-    .select('id, item_name, quantity, unit, price_per_unit')
+    .select('id, business_id, item_name, quantity, unit, price_per_unit')
+    .eq('id', inventoryId)
     .eq('business_id', client.business_id)
-    .gt('quantity', 0)
-    .order('item_name');
+    .single();
 
-  if (!inventory || inventory.length === 0) {
-    return ctx.reply('No items available right now.');
+  if (itemError || !item) {
+    return ctx.answerCbQuery('Item not found');
   }
 
-  const itemList = inventory
-    .map((item: any, i: number) =>
-      `${i + 1}. *${item.item_name}* — ${item.quantity}${item.unit} available` +
-      (item.price_per_unit ? ` @ ₹${item.price_per_unit}/${item.unit}` : '')
-    )
-    .join('\n');
+  if (Number(item.quantity || 0) <= 0) {
+    return ctx.answerCbQuery('Item is out of stock');
+  }
 
-  const keyboard = inventory.slice(0, 8).map((item: any) => ([
-    Markup.button.callback(
-      `Order ${item.item_name}`,
-      `ORDER:${item.id}:${client.id}`
-    )
-  ]));
+  const { error: sessionError } = await supabase
+    .from('telegram_sessions')
+    .upsert({
+      telegram_id: telegramId,
+      client_id: client.id,
+      business_id: client.business_id,
+      state: 'AWAITING_ORDER_QUANTITY',
+      pending_order: {
+        inventoryId: item.id,
+        itemName: item.item_name,
+        defaultUnit: item.unit,
+        pricePerUnit: Number(item.price_per_unit || 0),
+        availableQuantity: Number(item.quantity || 0)
+      },
+      last_message_at: new Date().toISOString()
+    }, { onConflict: 'telegram_id' });
 
-  await ctx.reply(
-    `🛒 *Available Items*\n\n${itemList}\n\nTap an item to order:`,
-    { parse_mode: 'Markdown', ...Markup.inlineKeyboard(keyboard) }
+  if (sessionError) {
+    console.error('Save Telegram order session error:', sessionError);
+    return ctx.answerCbQuery('Could not start order flow');
+  }
+
+  await ctx.editMessageText(
+    `🛒 *${item.item_name}*\n\n` +
+    `Available: ${item.quantity} ${item.unit}\n` +
+    `${item.price_per_unit ? `Price: ₹${item.price_per_unit}/${item.unit}\n\n` : '\n'}` +
+    `Reply with quantity to place your order.\n` +
+    `Examples:\n` +
+    `• \`2\`\n` +
+    `• \`2 ${item.unit}\`\n` +
+    `• \`5 packet\``,
+    { parse_mode: 'Markdown' }
   );
+  await ctx.answerCbQuery('Send quantity in chat');
 });
 
 clientBot.command('pay', async (ctx: any) => {
-  const telegramId = String(ctx.from!.id);
-  const client = await getClientByTelegramId(telegramId);
-  
-  if (!client) {
-    return ctx.reply('❌ Account not linked.');
-  }
-
-  await ctx.reply(
-    `💳 *Pay via KhataFlow*\n\n` +
-    `Outstanding: ₹${client.total_outstanding}\n\n` +
-    `Choose payment method:`,
-    {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('💰 Pay with USDC (x402)', `PAY_USDC:${client.id}`)],
-        [Markup.button.callback('🔵 Pay with FLOW token', `PAY_FLOW:${client.id}`)],
-        [Markup.button.callback('✅ I paid in cash', `PAY_CASH:${client.id}`)],
-      ])
+  try {
+    const telegramId = String(ctx.from!.id);
+    const client = await getClientByTelegramId(telegramId);
+    
+    if (!client) {
+      return ctx.reply('❌ Account not linked. Ask your shopkeeper to share your client QR first.');
     }
-  );
+
+    await ctx.reply(
+      `💳 *Pay via KhataFlow*\n\n` +
+      `Outstanding: ₹${client.total_outstanding}\n\n` +
+      `Choose payment method:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('💰 Pay with USDC (x402)', 'PAY_USDC')],
+          [Markup.button.callback('🔵 Pay with FLOW token', 'PAY_FLOW')],
+          [Markup.button.callback('✅ I paid in cash', 'PAY_CASH')],
+        ])
+      }
+    );
+  } catch (error: any) {
+    console.error('Client /pay error:', error);
+    await ctx.reply(`❌ Could not open payment options right now: ${error.message}`);
+  }
 });
 
 clientBot.command('history', async (ctx: any) => {
@@ -335,10 +434,114 @@ clientBot.command('history', async (ctx: any) => {
   );
 });
 
+clientBot.on(message('text'), async (ctx: any, next: any) => {
+  const messageText = (ctx.message?.text || '').trim();
+
+  if (!messageText || messageText.startsWith('/')) {
+    return next();
+  }
+
+  const telegramId = String(ctx.from!.id);
+  const { data: session } = await supabase
+    .from('telegram_sessions')
+    .select('telegram_id, client_id, business_id, state, pending_order')
+    .eq('telegram_id', telegramId)
+    .maybeSingle();
+
+  if (!session || session.state !== 'AWAITING_ORDER_QUANTITY' || !session.pending_order) {
+    return next();
+  }
+
+  const parsed = parseQuantityInput(messageText);
+  if (!parsed || parsed.quantity <= 0) {
+    await ctx.reply(
+      'Please reply with a valid quantity.\nExamples: `2`, `2 kg`, `5 packet`',
+      { parse_mode: 'Markdown' }
+    );
+    return;
+  }
+
+  const client = await getClientById(session.client_id);
+  if (!client) {
+    await ctx.reply('❌ Client account not found. Please re-link your Telegram account.');
+    return;
+  }
+
+  const { data: item, error: itemError } = await supabase
+    .from('inventory')
+    .select('id, item_name, quantity, unit, price_per_unit')
+    .eq('business_id', session.business_id)
+    .eq('id', session.pending_order.inventoryId)
+    .single();
+
+  if (itemError || !item) {
+    await ctx.reply('❌ That item is no longer available.');
+    return;
+  }
+
+  const finalUnit = parsed.unit || session.pending_order.defaultUnit || item.unit;
+  const estimatedAmount = Number(item.price_per_unit || 0) * parsed.quantity;
+  const orderItems = [{
+    id: item.id,
+    name: item.item_name,
+    qty: parsed.quantity,
+    unit: finalUnit,
+    price: Number(item.price_per_unit || 0)
+  }];
+
+  const { data: order, error: orderError } = await supabase
+    .from('orders')
+    .insert({
+      business_id: client.business_id,
+      client_id: client.id,
+      status: 'PENDING',
+      source: 'TELEGRAM',
+      items: orderItems,
+      total_amount: estimatedAmount,
+      payment_method: 'PENDING',
+      payment_status: 'UNPAID',
+      notes: `Telegram order from @${ctx.from?.username || 'client'}`
+    })
+    .select('id, total_amount')
+    .single();
+
+  if (orderError || !order) {
+    console.error('Create Telegram order error:', orderError);
+    await ctx.reply('❌ Could not place your order right now.');
+    return;
+  }
+
+  await supabase
+    .from('telegram_sessions')
+    .upsert({
+      telegram_id: telegramId,
+      client_id: client.id,
+      business_id: client.business_id,
+      state: 'IDLE',
+      pending_order: {},
+      last_message_at: new Date().toISOString()
+    }, { onConflict: 'telegram_id' });
+
+  await notifyAdmin(
+    client.business_id,
+    'ORDER_PLACED',
+    'New Telegram Order',
+    `${client.name} requested ${parsed.quantity} ${finalUnit} of ${item.item_name}${item.price_per_unit ? ` for approx ₹${estimatedAmount}` : ''}.`
+  );
+
+  await ctx.reply(
+    `✅ *Order placed!*\n\n` +
+    `${item.item_name} x ${parsed.quantity} ${finalUnit} has been sent to your shopkeeper.\n` +
+    `${item.price_per_unit ? `Estimated amount: ₹${estimatedAmount}\n` : ''}` +
+    `Order ID: ${order.id}`,
+    { parse_mode: 'Markdown' }
+  );
+});
+
 // Handle payment method selection
-clientBot.action(/PAY_CASH:(.+)/, async (ctx: any) => {
-  const [, clientId] = ctx.match;
-  const client = await getClientById(clientId);
+clientBot.action('PAY_CASH', async (ctx: any) => {
+  const telegramId = String(ctx.from!.id);
+  const client = await getClientByTelegramId(telegramId);
   
   if (!client) {
     return ctx.answerCbQuery('Client not found');
@@ -347,7 +550,7 @@ clientBot.action(/PAY_CASH:(.+)/, async (ctx: any) => {
   // Create payment confirmation record
   await supabase.from('payment_confirmations').insert({
     business_id: client.business_id,
-    client_id: clientId,
+    client_id: client.id,
     amount: client.total_outstanding,
     note: 'Cash payment via Telegram',
     status: 'PENDING_CONFIRMATION'
@@ -369,15 +572,25 @@ clientBot.action(/PAY_CASH:(.+)/, async (ctx: any) => {
   await ctx.answerCbQuery();
 });
 
-clientBot.action(/PAY_USDC:(.+)/, async (ctx: any) => {
-  const [, clientId] = ctx.match;
-  const client = await getClientById(clientId);
+clientBot.action('PAY_USDC', async (ctx: any) => {
+  const telegramId = String(ctx.from!.id);
+  const client = await getClientByTelegramId(telegramId);
   
   if (!client) {
     return ctx.answerCbQuery('Client not found');
   }
 
   const { paymentUrl } = getClientAccessUrls(client.business_id, client.id);
+
+  if (isLocalOnlyUrl(paymentUrl)) {
+    await ctx.editMessageText(
+      `Pay ₹${client.total_outstanding} with USDC\n\n` +
+      `Local development links cannot be opened as Telegram buttons.\n\n` +
+      `Open this link on the same machine running KhataFlow:\n${paymentUrl}`
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
 
   await ctx.editMessageText(
     `💳 *Pay ₹${client.total_outstanding} with USDC*\n\n` +
@@ -393,9 +606,9 @@ clientBot.action(/PAY_USDC:(.+)/, async (ctx: any) => {
   await ctx.answerCbQuery();
 });
 
-clientBot.action(/PAY_FLOW:(.+)/, async (ctx: any) => {
-  const [, clientId] = ctx.match;
-  const client = await getClientById(clientId);
+clientBot.action('PAY_FLOW', async (ctx: any) => {
+  const telegramId = String(ctx.from!.id);
+  const client = await getClientByTelegramId(telegramId);
   
   if (!client) {
     return ctx.answerCbQuery('Client not found');
@@ -403,6 +616,16 @@ clientBot.action(/PAY_FLOW:(.+)/, async (ctx: any) => {
 
   const { paymentUrl } = getClientAccessUrls(client.business_id, client.id);
   const flowPaymentUrl = `${paymentUrl}${paymentUrl.includes('?') ? '&' : '?'}tokenType=FLOW`;
+
+  if (isLocalOnlyUrl(flowPaymentUrl)) {
+    await ctx.editMessageText(
+      `Pay ₹${client.total_outstanding} with FLOW\n\n` +
+      `Local development links cannot be opened as Telegram buttons.\n\n` +
+      `Open this link on the same machine running KhataFlow:\n${flowPaymentUrl}`
+    );
+    await ctx.answerCbQuery();
+    return;
+  }
 
   await ctx.editMessageText(
     `🔵 *Pay ₹${client.total_outstanding} with FLOW*\n\n` +

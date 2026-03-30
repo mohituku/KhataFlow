@@ -12,8 +12,8 @@ export default function PaymentPage() {
   const accessToken = searchParams.get('token') || '';
   
   const [clientData, setClientData] = useState(null);
-  const [paymentDetails, setPaymentDetails] = useState(null);
   const [paying, setPaying] = useState(false);
+  const [activePaymentToken, setActivePaymentToken] = useState('');
   const [txHash, setTxHash] = useState(null);
   const [error, setError] = useState(null);
   
@@ -41,6 +41,7 @@ export default function PaymentPage() {
 
   const initiatePayment = async (tokenType) => {
     setPaying(true);
+    setActivePaymentToken(tokenType);
     setError(null);
 
     try {
@@ -68,8 +69,6 @@ export default function PaymentPage() {
       if (!option) {
         throw new Error(`${tokenType} payment option not available`);
       }
-
-      setPaymentDetails(option);
 
       // 2. Connect wallet if not connected
       if (!address) {
@@ -118,6 +117,7 @@ export default function PaymentPage() {
       setError(err.message);
     } finally {
       setPaying(false);
+      setActivePaymentToken('');
     }
   };
 
@@ -177,6 +177,9 @@ export default function PaymentPage() {
           <p className="text-4xl font-bold text-khata-accent mt-2">
             ₹{clientData.total_outstanding}
           </p>
+          <p className="text-xs uppercase tracking-[0.2em] text-khata-muted mt-3">
+            Suggested payment: {preferredToken}
+          </p>
         </div>
 
         {error && (
@@ -190,15 +193,15 @@ export default function PaymentPage() {
           <button
             onClick={() => initiatePayment('USDC')}
             disabled={paying || isConnecting}
-            className="w-full clip-angled flex items-center justify-center gap-3 px-6 py-5
-              bg-gradient-to-r from-green-600 to-green-500
+            className={`w-full clip-angled flex items-center justify-center gap-3 px-6 py-5
+              ${preferredToken === 'USDC' ? 'bg-gradient-to-r from-green-500 to-emerald-400' : 'bg-gradient-to-r from-green-600 to-green-500'}
               text-white font-bold uppercase tracking-wider text-lg
               border-[3px] border-khata-bg
               hover:scale-[1.02] transition-all duration-300
-              disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled:opacity-50 disabled:cursor-not-allowed`}
             style={{ boxShadow: paying ? 'none' : '0 0 25px rgba(34,197,94,0.6)' }}
           >
-            {paying && preferredToken === 'USDC' ? (
+            {paying && activePaymentToken === 'USDC' ? (
               <Loader2 className="w-6 h-6 animate-spin" />
             ) : (
               <>💰 Pay with USDC</>
@@ -208,15 +211,15 @@ export default function PaymentPage() {
           <button
             onClick={() => initiatePayment('FLOW')}
             disabled={paying || isConnecting}
-            className="w-full clip-angled flex items-center justify-center gap-3 px-6 py-5
-              bg-gradient-to-r from-blue-600 to-blue-500
+            className={`w-full clip-angled flex items-center justify-center gap-3 px-6 py-5
+              ${preferredToken === 'FLOW' ? 'bg-gradient-to-r from-blue-500 to-cyan-400' : 'bg-gradient-to-r from-blue-600 to-blue-500'}
               text-white font-bold uppercase tracking-wider text-lg
               border-[3px] border-khata-bg
               hover:scale-[1.02] transition-all duration-300
-              disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled:opacity-50 disabled:cursor-not-allowed`}
             style={{ boxShadow: paying ? 'none' : '0 0 25px rgba(59,130,246,0.6)' }}
           >
-            {paying && preferredToken === 'FLOW' ? (
+            {paying && activePaymentToken === 'FLOW' ? (
               <Loader2 className="w-6 h-6 animate-spin" />
             ) : (
               <>🔵 Pay with FLOW</>

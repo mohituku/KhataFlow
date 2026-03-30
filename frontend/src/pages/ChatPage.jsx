@@ -1,6 +1,7 @@
 import { ChatInterface } from '../components/chat/ChatInterface';
 import { StatCards } from '../components/dashboard/StatCards';
 import { ActivityFeed } from '../components/dashboard/ActivityFeed';
+import { NotificationInbox } from '../components/dashboard/NotificationInbox';
 import { PendingInvoices } from '../components/dashboard/PendingInvoices';
 import { TelegramAdminCard } from '../components/dashboard/TelegramAdminCard';
 
@@ -21,6 +22,7 @@ export default function ChatPage() {
 
       <div className="lg:col-span-2 space-y-6 min-h-0 lg:overflow-y-auto lg:pr-1">
         <TelegramAdminCard />
+        <NotificationInbox />
         <StatCards />
         <ActivityFeed />
         <PendingInvoices />

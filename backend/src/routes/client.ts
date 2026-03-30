@@ -4,6 +4,7 @@ import QRCode from 'qrcode';
 import { supabase } from '../services/supabase';
 import { getBusinessId } from '../middleware/walletAuth';
 import { getClientAccessUrls, verifyClientAccessToken } from '../services/signedLinks';
+import { notifyAdmin } from '../services/notifications';
 
 const router = Router();
 
@@ -251,6 +252,13 @@ router.post('/:businessId/:clientId/confirm-payment', async (req: Request, res: 
     if (error) {
       throw error;
     }
+
+    await notifyAdmin(
+      businessId,
+      'PAYMENT_RECEIVED',
+      'Client Payment Confirmation',
+      `A client reported a payment of ₹${amount}. Note: ${note || 'No note provided'}.`
+    );
 
     res.json({
       success: true,
