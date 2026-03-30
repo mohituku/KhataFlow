@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ethers } from 'ethers';
 import { useWalletStore } from '../store/useWalletStore';
+import { useAppStore } from '../store/useAppStore';
 import { CONTRACTS, FLOW_TESTNET, ZERO_ADDRESS } from '../lib/contracts';
 import { fetchJson, getBusinessId } from '../lib/api';
 
@@ -9,6 +10,7 @@ export const useMintNFT = () => {
   const [txHash, setTxHash] = useState(null);
   const [error, setError] = useState(null);
   const { signer } = useWalletStore();
+  const triggerDashboardRefresh = useAppStore((state) => state.triggerDashboardRefresh);
 
   const mintNFT = async ({ businessId, clientName, amountInr, dueDateUnix, invoiceId }) => {
     if (!signer) {
@@ -71,6 +73,8 @@ export const useMintNFT = () => {
           })
         });
       }
+
+      triggerDashboardRefresh();
 
       return {
         success: true,

@@ -17,8 +17,8 @@ export const ChatInterface = () => {
   }, [conversationHistory]);
 
   return (
-    <div className="flex flex-col h-full bg-khata-bg" data-testid="chat-interface">
-      <div className="flex-1 overflow-y-auto p-6">
+    <div className="flex flex-col h-full min-h-0 bg-khata-bg" data-testid="chat-interface">
+      <div className="flex-1 min-h-0 overflow-y-auto p-6">
         {conversationHistory.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full text-center" data-testid="chat-empty-state">
             <div className="w-20 h-20 rounded-full bg-khata-surface border-[3px] border-khata-accent flex items-center justify-center mb-4">

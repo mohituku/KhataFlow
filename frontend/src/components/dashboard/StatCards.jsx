@@ -2,8 +2,10 @@ import { useEffect, useState } from 'react';
 import { TrendingUp, AlertCircle, Wallet, Users } from 'lucide-react';
 import { formatCurrency } from '../../lib/formatters';
 import { fetchJson } from '../../lib/api';
+import { useAppStore } from '../../store/useAppStore';
 
 export const StatCards = () => {
+  const dashboardRefreshKey = useAppStore((state) => state.dashboardRefreshKey);
   const [stats, setStats] = useState({
     totalRevenue: 0,
     totalOutstanding: 0,
@@ -34,7 +36,7 @@ export const StatCards = () => {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [dashboardRefreshKey]);
 
   const cards = [
     {

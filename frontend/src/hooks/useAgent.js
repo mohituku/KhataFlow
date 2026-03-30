@@ -4,7 +4,7 @@ import { fetchJson } from '../lib/api';
 
 export const useAgent = () => {
   const [isLoading, setIsLoading] = useState(false);
-  const { conversationHistory, addMessage } = useAppStore();
+  const { conversationHistory, addMessage, triggerDashboardRefresh } = useAppStore();
 
   const sendMessage = async (message) => {
     const trimmedMessage = message.trim();
@@ -45,6 +45,10 @@ export const useAgent = () => {
         dbResult: data.dbResult,
         timestamp: new Date().toISOString()
       });
+
+      if (Array.isArray(data.actionResults) && data.actionResults.length > 0) {
+        triggerDashboardRefresh();
+      }
     } catch (error) {
       console.error('Agent error:', error);
       addMessage({

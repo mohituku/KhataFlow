@@ -7,6 +7,7 @@ import { MintModal } from './MintModal';
 import { fetchJson } from '../../lib/api';
 import { CONTRACTS, ZERO_ADDRESS } from '../../lib/contracts';
 import { useWalletStore } from '../../store/useWalletStore';
+import { useAppStore } from '../../store/useAppStore';
 import { toast } from 'sonner';
 
 export const NFTList = () => {
@@ -15,6 +16,7 @@ export const NFTList = () => {
   const [loading, setLoading] = useState(true);
   const [settlingTokenId, setSettlingTokenId] = useState(null);
   const { signer } = useWalletStore();
+  const triggerDashboardRefresh = useAppStore((state) => state.triggerDashboardRefresh);
 
   const loadNfts = async () => {
     setLoading(true);
@@ -96,6 +98,7 @@ export const NFTList = () => {
         })
       });
 
+      triggerDashboardRefresh();
       toast.success('Debt settled on-chain');
       await loadNfts();
     } catch (error) {
