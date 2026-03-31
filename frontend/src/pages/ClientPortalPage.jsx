@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import {
   CheckCircle,
+  Copy,
   CreditCard,
   ExternalLink,
   Loader2,
@@ -107,6 +108,17 @@ export default function ClientPortalPage() {
     } catch (error) {
       console.error('Failed to generate QR:', error);
       toast.error('Failed to generate QR code');
+    }
+  };
+
+  const copyClientStartCommand = async () => {
+    if (!qrData?.startCommand) return;
+
+    try {
+      await navigator.clipboard.writeText(qrData.startCommand);
+      toast.success('Telegram start command copied');
+    } catch (error) {
+      toast.error('Failed to copy Telegram start command');
     }
   };
 
@@ -561,6 +573,11 @@ export default function ClientPortalPage() {
                 <p className="text-sm text-khata-muted">
                   Scan this QR code with Telegram to link your account and receive payment notifications.
                 </p>
+                {qrData.telegramSetupError && (
+                  <p className="text-sm text-khata-danger">
+                    {qrData.telegramSetupError}
+                  </p>
+                )}
                 <a
                   href={qrData.telegramLink}
                   target="_blank"
@@ -569,6 +586,23 @@ export default function ClientPortalPage() {
                 >
                   Open in Telegram
                 </a>
+              </div>
+              <div className="bg-khata-bg border-[3px] border-khata-border p-4 space-y-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-khata-muted">Manual Fallback</p>
+                <p className="text-sm text-khata-muted">
+                  If Telegram opens but does not link your account, send this exact command in
+                  <span className="text-khata-text font-bold"> @{qrData.botUsername}</span>.
+                </p>
+                <div className="px-4 py-3 border-[2px] border-khata-border bg-khata-surface text-khata-text font-mono text-sm break-all">
+                  {qrData.startCommand}
+                </div>
+                <button
+                  onClick={copyClientStartCommand}
+                  className="w-full px-4 py-3 bg-transparent text-khata-text font-bold uppercase tracking-wider text-sm border-[3px] border-khata-border hover:border-khata-accent hover:text-khata-accent transition-all duration-200 flex items-center justify-center gap-2"
+                >
+                  <Copy className="w-4 h-4" />
+                  Copy Start Command
+                </button>
               </div>
             </div>
           )}

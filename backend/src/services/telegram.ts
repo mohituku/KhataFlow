@@ -108,6 +108,114 @@ function parseQuantityInput(input: string) {
   };
 }
 
+function normalizeAdminLinkCode(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('admin_')) {
+    return trimmed.slice('admin_'.length);
+  }
+  return trimmed;
+}
+
+function normalizeClientLinkCode(value: string | null | undefined) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (trimmed.startsWith('client_')) {
+    return trimmed.slice('client_'.length);
+  }
+  return trimmed;
+}
+
+function extractCommandArgument(text: string | undefined) {
+  if (!text) return null;
+  const [, ...rest] = text.trim().split(/\s+/);
+  const joined = rest.join(' ').trim();
+  return joined || null;
+}
+
+async function linkAdminAccount(businessId: string, telegramId: string, username: string) {
+  const { data, error } = await supabase
+    .from('businesses')
+    .update({
+      telegram_admin_id: telegramId,
+      telegram_admin_username: username
+    })
+    .eq('id', businessId)
+    .select('id, name')
+    .single();
+
+  if (error || !data) {
+    throw error || new Error('Business not found');
+  }
+
+  return data;
+}
+
+async function linkClientAccount(clientId: string, telegramId: string, username: string) {
+  const { data: client, error: clientError } = await supabase
+    .from('clients')
+    .select('id, name, business_id, total_outstanding')
+    .eq('id', clientId)
+    .maybeSingle();
+
+  if (clientError || !client) {
+    throw clientError || new Error('Client not found');
+  }
+
+  const { data: linkedClient, error: updateError } = await supabase
+    .from('clients')
+    .update({
+      telegram_id: telegramId,
+      telegram_username: username,
+      telegram_linked_at: new Date().toISOString()
+    })
+    .eq('id', client.id)
+    .select('id, name, business_id, total_outstanding')
+    .single();
+
+  if (updateError || !linkedClient) {
+    throw updateError || new Error('Failed to link client account');
+  }
+
+  return linkedClient;
+}
+
+async function replyAdminLinked(ctx: any, businessName: string) {
+  await ctx.reply(
+    `✅ *Linked to: ${businessName}*\n\n` +
+    `You can now manage your business via Telegram!\n\n` +
+    `Send commands like:\n` +
+    `• "Ramesh ne 5kg aloo liya 200 baaki"\n` +
+    `• "Suresh ne 500 de diye"\n` +
+    `• "Low stock dikhao"\n` +
+    `• "Aaj ki report"`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
+async function replyClientLinked(ctx: any, client: any) {
+  await notifyClient(
+    client.id,
+    'TELEGRAM_JOINED',
+    'Welcome to KhataFlow!',
+    `Your account is now linked to Telegram.`
+  );
+
+  await ctx.reply(
+    `🙏 *Namaste, ${client.name}!*\n\n` +
+    `Your account is now linked.\n\n` +
+    `Outstanding: *₹${client.total_outstanding}*\n\n` +
+    `Commands:\n` +
+    `/balance — Check outstanding\n` +
+    `/orders — Browse available items\n` +
+    `/history — Your purchase history\n` +
+    `/pay — Notify a payment`,
+    { parse_mode: 'Markdown' }
+  );
+}
+
 // ============================================
 // ADMIN BOT HANDLERS
 // ============================================
@@ -117,36 +225,20 @@ adminBot.start(async (ctx: any) => {
   const startParam = ctx.startPayload;
 
   // Check if linking a business
-  if (startParam && startParam.startsWith('admin_')) {
-    const businessId = startParam.replace('admin_', '');
-    
-    // Link this telegram account to the business
-    const { data, error } = await supabase
-      .from('businesses')
-      .update({ 
-        telegram_admin_id: telegramId,
-        telegram_admin_username: ctx.from!.username || ''
-      })
-      .eq('id', businessId)
-      .select('name')
-      .single();
-
-    if (error || !data) {
+  const businessIdFromStart = normalizeAdminLinkCode(startParam);
+  if (businessIdFromStart) {
+    try {
+      const business = await linkAdminAccount(
+        businessIdFromStart,
+        telegramId,
+        ctx.from!.username || ''
+      );
+      await replyAdminLinked(ctx, business.name);
+      return;
+    } catch {
       await ctx.reply('❌ Failed to link account. Please try again from the dashboard.');
       return;
     }
-
-    await ctx.reply(
-      `✅ *Linked to: ${data.name}*\n\n` +
-      `You can now manage your business via Telegram!\n\n` +
-      `Send commands like:\n` +
-      `• "Ramesh ne 5kg aloo liya 200 baaki"\n` +
-      `• "Suresh ne 500 de diye"\n` +
-      `• "Low stock dikhao"\n` +
-      `• "Aaj ki report"`,
-      { parse_mode: 'Markdown' }
-    );
-    return;
   }
 
   // Check if already linked
@@ -190,9 +282,38 @@ adminBot.start(async (ctx: any) => {
   );
 });
 
+adminBot.command('link', async (ctx: any) => {
+  const telegramId = String(ctx.from!.id);
+  const businessId = normalizeAdminLinkCode(extractCommandArgument(ctx.message?.text));
+
+  if (!businessId) {
+    await ctx.reply('❌ Missing link code. Open the KhataFlow dashboard and copy the admin start command.');
+    return;
+  }
+
+  try {
+    const business = await linkAdminAccount(businessId, telegramId, ctx.from!.username || '');
+    await replyAdminLinked(ctx, business.name);
+  } catch {
+    await ctx.reply('❌ Failed to link account. Please copy the latest admin start command from the dashboard.');
+  }
+});
+
 adminBot.on(message('text'), async (ctx: any) => {
   const telegramId = String(ctx.from!.id);
   const messageText = ctx.message.text;
+
+  const inlineBusinessId = normalizeAdminLinkCode(messageText);
+  if (inlineBusinessId && /^[0-9a-fA-F-]{36}$/.test(inlineBusinessId)) {
+    try {
+      const business = await linkAdminAccount(inlineBusinessId, telegramId, ctx.from!.username || '');
+      await replyAdminLinked(ctx, business.name);
+      return;
+    } catch {
+      await ctx.reply('❌ Failed to link account. Please copy the latest admin start command from the dashboard.');
+      return;
+    }
+  }
 
   if (messageText.startsWith('/')) {
     await ctx.reply(
@@ -234,48 +355,20 @@ clientBot.start(async (ctx: any) => {
   const telegramId = String(ctx.from!.id);
   const startParam = ctx.startPayload; // clientId passed via QR deeplink
 
-  if (startParam) {
-    // Client registered via QR code — link their telegram ID
-    const { data: client, error } = await supabase
-      .from('clients')
-      .select('id, name, business_id, total_outstanding')
-      .eq('id', startParam)
-      .maybeSingle();
-
-    if (error || !client) {
+  const clientIdFromStart = normalizeClientLinkCode(startParam);
+  if (clientIdFromStart) {
+    try {
+      const client = await linkClientAccount(
+        clientIdFromStart,
+        telegramId,
+        ctx.from!.username || ''
+      );
+      await replyClientLinked(ctx, client);
+      return;
+    } catch {
       await ctx.reply('❌ Invalid QR code. Please ask your shopkeeper for a new one.');
       return;
     }
-
-    // Link telegram account
-    await supabase
-      .from('clients')
-      .update({ 
-        telegram_id: telegramId,
-        telegram_username: ctx.from!.username || '',
-        telegram_linked_at: new Date().toISOString()
-      })
-      .eq('id', client.id);
-
-    await notifyClient(
-      client.id,
-      'TELEGRAM_JOINED',
-      'Welcome to KhataFlow!',
-      `Your account is now linked to Telegram.`
-    );
-
-    await ctx.reply(
-      `🙏 *Namaste, ${client.name}!*\n\n` +
-      `Your account is now linked.\n\n` +
-      `Outstanding: *₹${client.total_outstanding}*\n\n` +
-      `Commands:\n` +
-      `/balance — Check outstanding\n` +
-      `/orders — Browse available items\n` +
-      `/history — Your purchase history\n` +
-      `/pay — Notify a payment`,
-      { parse_mode: 'Markdown' }
-    );
-    return;
   }
 
   // Check if already linked
@@ -300,6 +393,23 @@ clientBot.start(async (ctx: any) => {
     `/pay — Notify a payment`,
     { parse_mode: 'Markdown' }
   );
+});
+
+clientBot.command('link', async (ctx: any) => {
+  const telegramId = String(ctx.from!.id);
+  const clientId = normalizeClientLinkCode(extractCommandArgument(ctx.message?.text));
+
+  if (!clientId) {
+    await ctx.reply('❌ Missing link code. Ask your shopkeeper for your Telegram QR or the exact start command.');
+    return;
+  }
+
+  try {
+    const client = await linkClientAccount(clientId, telegramId, ctx.from!.username || '');
+    await replyClientLinked(ctx, client);
+  } catch {
+    await ctx.reply('❌ Invalid client link code. Ask your shopkeeper for a fresh QR or start command.');
+  }
 });
 
 clientBot.command('balance', async (ctx: any) => {
@@ -509,6 +619,19 @@ clientBot.on(message('text'), async (ctx: any, next: any) => {
   }
 
   const telegramId = String(ctx.from!.id);
+  const inlineClientId = normalizeClientLinkCode(messageText);
+
+  if (/^[0-9a-fA-F-]{36}$/.test(inlineClientId || '')) {
+    try {
+      const client = await linkClientAccount(inlineClientId!, telegramId, ctx.from!.username || '');
+      await replyClientLinked(ctx, client);
+      return;
+    } catch {
+      await ctx.reply('❌ Invalid client link code. Ask your shopkeeper for a fresh QR or start command.');
+      return;
+    }
+  }
+
   const { data: session } = await supabase
     .from('telegram_sessions')
     .select('telegram_id, client_id, business_id, state, pending_order')

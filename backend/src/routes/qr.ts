@@ -51,7 +51,8 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
     }
 
     // Telegram deeplink: t.me/BotName?start=clientId
-    const telegramLink = `https://t.me/${botUsername}?start=${clientId}`;
+    const startCode = `client_${clientId}`;
+    const telegramLink = `https://t.me/${botUsername}?start=${startCode}`;
 
     const qrDataUrl = await QRCode.toDataURL(telegramLink, {
       width: 400,
@@ -64,6 +65,9 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
       qrDataUrl, 
       telegramLink, 
       clientId,
+      startCode,
+      startCommand: `/start ${startCode}`,
+      botUsername,
       telegram: getTelegramTransportStatus(),
       telegramSetupError
     });
@@ -95,7 +99,8 @@ router.get('/admin/link', async (req: Request, res: Response) => {
       telegramSetupError = error.message || 'Failed to initialize Telegram admin bot transport';
     }
 
-    const telegramLink = `https://t.me/${botUsername}?start=admin_${businessId}`;
+    const startCode = `admin_${businessId}`;
+    const telegramLink = `https://t.me/${botUsername}?start=${startCode}`;
     
     const qrDataUrl = await QRCode.toDataURL(telegramLink, { 
       width: 400,
@@ -110,6 +115,8 @@ router.get('/admin/link', async (req: Request, res: Response) => {
       businessId,
       businessName: business.name,
       botUsername,
+      startCode,
+      startCommand: `/start ${startCode}`,
       linked: Boolean(business.telegram_admin_id),
       linkedUsername: business.telegram_admin_username || null,
       telegram: getTelegramTransportStatus(),
