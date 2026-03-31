@@ -1,4 +1,5 @@
 import { Telegraf, Markup, Context } from 'telegraf';
+import type { Request, Response, NextFunction } from 'express';
 import { message } from 'telegraf/filters';
 import { geminiService } from './gemini';
 import { supabase } from './supabase';
@@ -813,5 +814,19 @@ export function initializeTelegramTransport() {
   return telegramTransportInitPromise;
 }
 
-export const adminWebhookHandler = adminBot.webhookCallback('/api/telegram/admin/webhook');
-export const clientWebhookHandler = clientBot.webhookCallback('/api/telegram/client/webhook');
+function createExpressWebhookHandler(bot: Telegraf) {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      await bot.handleUpdate(req.body, res);
+
+      if (!res.headersSent) {
+        res.status(200).json({ ok: true });
+      }
+    } catch (error) {
+      next(error);
+    }
+  };
+}
+
+export const adminWebhookHandler = createExpressWebhookHandler(adminBot);
+export const clientWebhookHandler = createExpressWebhookHandler(clientBot);
