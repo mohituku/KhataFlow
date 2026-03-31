@@ -153,8 +153,8 @@ cp .env.example .env
 | Variable | Value | Description |
 |---|---|---|
 | `REACT_APP_BACKEND_URL` | `http://localhost:8001` | Backend API base URL |
-| `REACT_APP_NFT_CONTRACT_ADDRESS` | `0x6fa658e00103EFD1Cf9dFbD0f0E71dFAA44979ad` | Deployed NFT contract |
-| `REACT_APP_PAYMENTS_CONTRACT_ADDRESS` | `0xeA9d2e308394555B914dFd962E8C97DCA2bEF73a` | Deployed payments contract |
+| `REACT_APP_NFT_CONTRACT_ADDRESS` | `0xAbd8d654ADf037cB832e8A5f38A399126E6f83dD` | Deployed NFT contract |
+| `REACT_APP_PAYMENTS_CONTRACT_ADDRESS` | `0xA84C52aCFdC6B4fE4363E69fD6a2e29792c271B7` | Deployed payments contract |
 | `REACT_APP_FLOW_CHAIN_ID` | `545` | Flow EVM Testnet chain ID |
 | `WDS_SOCKET_PORT` | `3000` | WebSocket port for hot-reload |
 
