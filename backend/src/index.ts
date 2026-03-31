@@ -1,5 +1,5 @@
 import { geminiService } from './services/gemini';
-import { getTelegramTransportStatus } from './services/telegram';
+import { ensureTelegramTransportReady, getTelegramTransportStatus } from './services/telegram';
 import app from './app';
 
 const PORT = process.env.PORT || 8001;
@@ -19,6 +19,10 @@ app.listen(PORT, () => {
   console.log(`   - Telegram: ${telegramStatus.configured ? `✅ ${telegramStatus.mode}` : '⚠️  not configured'}`);
   
   console.log('\n');
+
+  void ensureTelegramTransportReady().catch(() => {
+    // Transport errors are already logged in the telegram service.
+  });
 });
 
 export default app;

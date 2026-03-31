@@ -14,6 +14,13 @@ export const adminBot = new Telegraf(process.env.TELEGRAM_ADMIN_BOT_TOKEN || 'du
 export const clientBot = new Telegraf(process.env.TELEGRAM_CLIENT_BOT_TOKEN || 'dummy-token');
 
 let telegramTransportInitPromise: Promise<void> | null = null;
+const telegramTransportState = {
+  ready: false,
+  activeMode: 'idle' as 'idle' | 'polling' | 'webhook',
+  lastAttemptAt: null as string | null,
+  lastReadyAt: null as string | null,
+  lastError: null as string | null
+};
 
 function getBackendUrl() {
   return (process.env.BACKEND_URL || '').trim().replace(/\/$/, '');
@@ -37,6 +44,29 @@ async function ensureWebhook(bot: Telegraf, targetUrl: string, label: string) {
 
   await bot.telegram.setWebhook(targetUrl);
   console.log(`✅ Telegram ${label} webhook configured: ${targetUrl}`);
+}
+
+function getTelegramErrorMessage(error: any) {
+  if (!error) return 'Unknown Telegram transport error';
+  if (typeof error === 'string') return error;
+  return error.message || String(error);
+}
+
+function markTelegramTransportAttempt() {
+  telegramTransportState.lastAttemptAt = new Date().toISOString();
+  telegramTransportState.lastError = null;
+}
+
+function markTelegramTransportReady(mode: 'polling' | 'webhook') {
+  telegramTransportState.ready = true;
+  telegramTransportState.activeMode = mode;
+  telegramTransportState.lastReadyAt = new Date().toISOString();
+  telegramTransportState.lastError = null;
+}
+
+function markTelegramTransportError(error: any) {
+  telegramTransportState.ready = false;
+  telegramTransportState.lastError = getTelegramErrorMessage(error);
 }
 
 function getPublicFrontendUrl() {
@@ -752,7 +782,12 @@ export function getTelegramTransportStatus() {
     mode: isProduction ? 'webhook' : 'polling',
     backendUrl,
     adminWebhookPath: '/api/telegram/admin/webhook',
-    clientWebhookPath: '/api/telegram/client/webhook'
+    clientWebhookPath: '/api/telegram/client/webhook',
+    ready: telegramTransportState.ready,
+    activeMode: telegramTransportState.activeMode,
+    lastAttemptAt: telegramTransportState.lastAttemptAt,
+    lastReadyAt: telegramTransportState.lastReadyAt,
+    lastError: telegramTransportState.lastError
   };
 }
 
@@ -761,6 +796,7 @@ async function launchTelegramPolling() {
   await clientBot.telegram.deleteWebhook();
   await adminBot.launch();
   await clientBot.launch();
+  markTelegramTransportReady('polling');
   console.log('✅ Telegram bots launched successfully');
   console.log(`   - Admin Bot: @${process.env.TELEGRAM_ADMIN_BOT_USERNAME}`);
   console.log(`   - Client Bot: @${process.env.TELEGRAM_CLIENT_BOT_USERNAME}`);
@@ -778,41 +814,58 @@ async function launchTelegramPolling() {
 async function registerTelegramWebhooks() {
   const backendUrl = getBackendUrl();
   if (!isPublicHttpsUrl(backendUrl)) {
-    console.log('⚠️  BACKEND_URL is not a public HTTPS URL. Telegram webhooks were not configured.');
-    return;
+    const error = new Error('BACKEND_URL is not a public HTTPS URL. Telegram webhooks were not configured.');
+    markTelegramTransportError(error);
+    throw error;
   }
 
-  await ensureWebhook(
-    adminBot,
-    `${backendUrl}/api/telegram/admin/webhook`,
-    'admin'
-  );
-  await ensureWebhook(
-    clientBot,
-    `${backendUrl}/api/telegram/client/webhook`,
-    'client'
-  );
+  await ensureWebhook(adminBot, `${backendUrl}/api/telegram/admin/webhook`, 'admin');
+  await ensureWebhook(clientBot, `${backendUrl}/api/telegram/client/webhook`, 'client');
+  markTelegramTransportReady('webhook');
 }
 
-export function initializeTelegramTransport() {
-  if (telegramTransportInitPromise) {
-    return telegramTransportInitPromise;
-  }
-
+export function ensureTelegramTransportReady(options: { force?: boolean } = {}) {
+  const { force = false } = options;
   if (!process.env.TELEGRAM_ADMIN_BOT_TOKEN || !process.env.TELEGRAM_CLIENT_BOT_TOKEN) {
     console.log('⚠️  Telegram bot tokens not configured. Bots will not start.');
+    markTelegramTransportError('Telegram bot tokens not configured');
     telegramTransportInitPromise = Promise.resolve();
     return telegramTransportInitPromise;
   }
 
   const isProduction = (process.env.NODE_ENV || 'development') === 'production';
+  const targetMode = isProduction ? 'webhook' : 'polling';
+
+  if (telegramTransportState.ready && telegramTransportState.activeMode === targetMode) {
+    if (!force || !isProduction) {
+      return Promise.resolve();
+    }
+  }
+
+  if (!force) {
+    if (telegramTransportInitPromise) {
+      return telegramTransportInitPromise;
+    }
+
+  } else if (telegramTransportInitPromise) {
+    return telegramTransportInitPromise;
+  }
+
+  markTelegramTransportAttempt();
   telegramTransportInitPromise = (isProduction ? registerTelegramWebhooks() : launchTelegramPolling())
     .catch((error) => {
+      markTelegramTransportError(error);
       console.error('❌ Failed to initialize Telegram transport:', error);
+      throw error;
+    })
+    .finally(() => {
+      telegramTransportInitPromise = null;
     });
 
   return telegramTransportInitPromise;
 }
+
+export const initializeTelegramTransport = ensureTelegramTransportReady;
 
 function createExpressWebhookHandler(bot: Telegraf) {
   return async (req: Request, res: Response, next: NextFunction) => {

@@ -16,8 +16,8 @@ import {
   clientBot,
   adminWebhookHandler,
   clientWebhookHandler,
-  getTelegramTransportStatus,
-  initializeTelegramTransport
+  ensureTelegramTransportReady,
+  getTelegramTransportStatus
 } from './services/telegram';
 import { setTelegramBots } from './services/notifications';
 
@@ -50,6 +50,19 @@ app.use(cors({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    service: 'KhataFlow Backend',
+    health: '/health',
+    api: '/api'
+  });
+});
+
+app.get('/favicon.ico', (req: Request, res: Response) => {
+  res.status(204).end();
+});
+
 // Telegram webhooks must stay public and bypass wallet auth.
 app.post('/api/telegram/admin/webhook', adminWebhookHandler);
 app.post('/api/telegram/client/webhook', clientWebhookHandler);
@@ -80,6 +93,29 @@ app.get('/health/ai', (req: Request, res: Response) => {
     telegram: getTelegramTransportStatus(),
     timestamp: new Date().toISOString()
   });
+});
+
+app.get('/api/telegram/status', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    telegram: getTelegramTransportStatus()
+  });
+});
+
+app.post('/api/telegram/register-webhooks', async (req: Request, res: Response) => {
+  try {
+    await ensureTelegramTransportReady({ force: true });
+    res.json({
+      success: true,
+      telegram: getTelegramTransportStatus()
+    });
+  } catch (error: any) {
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to register Telegram webhooks',
+      telegram: getTelegramTransportStatus()
+    });
+  }
 });
 
 app.use('/api/chat', chatRouter);
@@ -134,6 +170,5 @@ app.use((err: any, req: Request, res: Response, next: any) => {
 });
 
 setTelegramBots(adminBot, clientBot);
-void initializeTelegramTransport();
 
 export default app;

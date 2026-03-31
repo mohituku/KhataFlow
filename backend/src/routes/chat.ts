@@ -18,6 +18,7 @@ import {
 } from '../services/commandExecution';
 
 const router = Router();
+const MUTATING_INTENTS = new Set(['ADD_SALE', 'MARK_PAID', 'UPDATE_STOCK']);
 
 const chatRequestSchema = z.object({
   message: z.string().min(1),
@@ -42,6 +43,14 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
     // Execute ALL actions in parallel where safe (reads), serial for writes
     const actionResults = await executeActions(hydratedParsed.actions, businessId);
     syncSessionFromResults(sessionId, actionResults);
+    const executionSummary = {
+      totalActions: actionResults.length,
+      successfulActions: actionResults.filter(({ result }) => result && !result.error).length,
+      failedActions: actionResults.filter(({ result }) => result?.error).length,
+      successfulMutations: actionResults.filter(
+        ({ action, result }) => MUTATING_INTENTS.has(action.intent) && result && !result.error
+      ).length
+    };
 
     // Build the final enriched response
     const finalResponse = buildFinalResponse(hydratedParsed, actionResults);
@@ -59,6 +68,7 @@ router.post('/', async (req: Request, res: Response): Promise<void> => {
         ...hydratedParsed,
         response: finalResponse
       },
+      executionSummary,
       actionResults,
       dbResult: actionResults[0]?.result || null
     });

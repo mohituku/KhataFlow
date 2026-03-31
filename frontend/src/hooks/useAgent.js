@@ -3,6 +3,7 @@ import { useAppStore } from '../store/useAppStore';
 import { fetchJson } from '../lib/api';
 
 const CHAT_SESSION_STORAGE_KEY = 'khataflow-chat-session-id';
+const MUTATING_INTENTS = new Set(['ADD_SALE', 'MARK_PAID', 'UPDATE_STOCK']);
 
 export const useAgent = () => {
   const [isLoading, setIsLoading] = useState(false);
@@ -48,18 +49,22 @@ export const useAgent = () => {
         data.parsedCommand?.response ||
         data.action?.response ||
         'Done!';
+      const actionResults = Array.isArray(data.actionResults) ? data.actionResults : [];
+      const hasSuccessfulMutation = actionResults.some(({ action: currentAction, result }) =>
+        MUTATING_INTENTS.has(currentAction?.intent) && result && !result.error
+      );
 
       addMessage({
         role: 'ai',
         content: responseText,
         action: data.action,
         parsedCommand: data.parsedCommand,
-        actionResults: data.actionResults,
+        actionResults,
         dbResult: data.dbResult,
         timestamp: new Date().toISOString()
       });
 
-      if (Array.isArray(data.actionResults) && data.actionResults.length > 0) {
+      if (hasSuccessfulMutation) {
         triggerDashboardRefresh();
       }
     } catch (error) {

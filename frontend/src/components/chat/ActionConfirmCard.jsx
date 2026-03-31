@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Check, X, ChevronDown, ChevronUp, Package, User, IndianRupee, TrendingUp } from 'lucide-react';
 import { formatCurrency } from '../../lib/formatters';
-import { toast } from 'sonner';
 
 const INTENT_CONFIG = {
   ADD_SALE:        { label: 'Sale Recorded',    color: 'accent',  icon: IndianRupee },
@@ -14,13 +13,22 @@ const INTENT_CONFIG = {
   UNKNOWN:         { label: 'Action',           color: 'border',  icon: Check },
 };
 
+const FAILURE_CONFIG = { label: 'Action Failed', color: 'danger', icon: X };
+
 // Single action display
-function ActionBlock({ action, index, total }) {
+function ActionBlock({ action, result, index, total }) {
   const [expanded, setExpanded] = useState(false);
-  const cfg = INTENT_CONFIG[action.intent] || INTENT_CONFIG.UNKNOWN;
+  const baseCfg = INTENT_CONFIG[action.intent] || INTENT_CONFIG.UNKNOWN;
+  const cfg = result?.error
+    ? {
+        ...FAILURE_CONFIG,
+        label: baseCfg.label === 'Action' ? FAILURE_CONFIG.label : `${baseCfg.label} Failed`
+      }
+    : baseCfg;
   const Icon = cfg.icon;
   const hasItems = Array.isArray(action.items) && action.items.length > 0;
   const hasFilters = action.filters && Object.values(action.filters).some(v => v !== null && v !== undefined);
+  const displayAmount = action.paymentAmount ?? action.totalAmount ?? result?.amount ?? result?.recoveredAmount ?? 0;
 
   return (
     <div className={`border-[2px] border-khata-${cfg.color} bg-khata-bg rounded-none`}>
@@ -39,15 +47,18 @@ function ActionBlock({ action, index, total }) {
                   <span className="text-khata-muted">Client:</span> <strong>{action.clientName}</strong>
                 </span>
               )}
-              {(action.totalAmount ?? action.paymentAmount) > 0 && (
+              {displayAmount > 0 && (
                 <span className="text-xs text-khata-accent font-bold">
-                  {formatCurrency(action.paymentAmount ?? action.totalAmount ?? 0)}
+                  {formatCurrency(displayAmount)}
                 </span>
               )}
               {hasItems && (
                 <span className="text-xs text-khata-muted">{action.items.length} item{action.items.length > 1 ? 's' : ''}</span>
               )}
             </div>
+            {result?.error && (
+              <p className="text-xs text-khata-danger mt-1">{result.error}</p>
+            )}
           </div>
         </div>
         {(hasItems || hasFilters) && (
@@ -98,7 +109,7 @@ function ActionBlock({ action, index, total }) {
 
 // Rich result display for query/report intents
 function ResultDisplay({ dbResult, intent }) {
-  if (!dbResult) return null;
+  if (!dbResult || dbResult.error) return null;
 
   if (intent === 'QUERY_LEDGER' && dbResult.summary?.clients?.length > 0) {
     return (
@@ -181,10 +192,14 @@ export const ActionConfirmCard = ({ action, parsedCommand, dbResult, actionResul
   // Support both old (single action) and new (parsedCommand with multiple actions)
   const actions = parsedCommand?.actions || (action ? [action] : []);
   if (actions.length === 0) return null;
+  const normalizedActionResults = actions.map((currentAction, index) => ({
+    action: currentAction,
+    result: actionResults?.[index]?.result ?? (index === 0 ? dbResult : null)
+  }));
 
   // For read-only intents, don't show confirm/dismiss — just show data
-  const isReadOnly = actions.every(a =>
-    ['QUERY_LEDGER', 'QUERY_STOCK', 'GENERATE_REPORT', 'GENERATE_INVOICE', 'UNKNOWN'].includes(a.intent)
+  const isReadOnly = normalizedActionResults.every(({ action: currentAction }) =>
+    ['QUERY_LEDGER', 'QUERY_STOCK', 'GENERATE_REPORT', 'GENERATE_INVOICE', 'UNKNOWN'].includes(currentAction.intent)
   );
 
   const requiresConfirmation = parsedCommand?.requiresConfirmation ?? !isReadOnly;
@@ -197,13 +212,19 @@ export const ActionConfirmCard = ({ action, parsedCommand, dbResult, actionResul
       )}
 
       {/* Action blocks */}
-      {actions.map((a, i) => (
-        <ActionBlock key={i} action={a} index={i} total={actions.length} />
+      {normalizedActionResults.map(({ action: currentAction, result }, i) => (
+        <ActionBlock
+          key={i}
+          action={currentAction}
+          result={result}
+          index={i}
+          total={actions.length}
+        />
       ))}
 
       {/* Rich result display for queries */}
-      {actionResults?.length > 0 && actionResults.map(({ action: a, result }, i) => (
-        <ResultDisplay key={i} dbResult={result} intent={a.intent} />
+      {normalizedActionResults.map(({ action: currentAction, result }, i) => (
+        <ResultDisplay key={i} dbResult={result} intent={currentAction.intent} />
       ))}
 
       {/* Only show dismiss button — "Got it" is implicit via the response text */}

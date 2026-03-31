@@ -11,8 +11,23 @@ export const TelegramAdminCard = () => {
     setLoading(true);
 
     try {
+      try {
+        await fetchJson('/api/telegram/register-webhooks', {
+          method: 'POST',
+          body: JSON.stringify({})
+        });
+      } catch (telegramError) {
+        console.error('Failed to register Telegram webhooks:', telegramError);
+      }
+
       const payload = await fetchJson('/api/qr/admin/link');
       setData(payload);
+
+      if (payload.telegramSetupError) {
+        toast.error('Telegram setup needs attention', {
+          description: payload.telegramSetupError
+        });
+      }
     } catch (error) {
       console.error('Failed to load Telegram admin QR:', error);
       toast.error('Failed to load Telegram admin access', {
@@ -85,6 +100,11 @@ export const TelegramAdminCard = () => {
             <span className="text-sm text-khata-muted">
               Bot: <span className="text-khata-text font-bold">@{data.botUsername}</span>
             </span>
+            {data.telegram?.lastError && (
+              <span className="text-sm text-khata-danger">
+                Transport: {data.telegram.lastError}
+              </span>
+            )}
           </div>
 
           <p className="text-sm text-khata-muted">

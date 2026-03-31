@@ -4,7 +4,11 @@ import { ActionConfirmCard } from './ActionConfirmCard';
 
 export const ChatMessage = ({ message }) => {
   const isUser = message.role === 'user';
-  const hasAction = message.parsedCommand || message.action;
+  const hasAction =
+    Boolean(message.parsedCommand) ||
+    Boolean(message.action) ||
+    (Array.isArray(message.actionResults) && message.actionResults.length > 0) ||
+    Boolean(message.dbResult);
 
   return (
     <div

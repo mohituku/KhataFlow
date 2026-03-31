@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import { getBusinessId } from '../middleware/walletAuth';
 import { supabase } from '../services/supabase';
 import { verifyClientAccessToken } from '../services/signedLinks';
+import { ensureTelegramTransportReady, getTelegramTransportStatus } from '../services/telegram';
 
 const router = Router();
 
@@ -41,6 +42,13 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
 
     verifyClientAccessToken(token, client.business_id, client.id);
     const botUsername = process.env.TELEGRAM_CLIENT_BOT_USERNAME || 'KhataFlowClientBot';
+    let telegramSetupError: string | null = null;
+
+    try {
+      await ensureTelegramTransportReady();
+    } catch (error: any) {
+      telegramSetupError = error.message || 'Failed to initialize Telegram client bot transport';
+    }
 
     // Telegram deeplink: t.me/BotName?start=clientId
     const telegramLink = `https://t.me/${botUsername}?start=${clientId}`;
@@ -55,7 +63,9 @@ router.get('/client/:clientId', async (req: Request, res: Response) => {
       success: true,
       qrDataUrl, 
       telegramLink, 
-      clientId 
+      clientId,
+      telegram: getTelegramTransportStatus(),
+      telegramSetupError
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
@@ -77,6 +87,14 @@ router.get('/admin/link', async (req: Request, res: Response) => {
     }
 
     const botUsername = process.env.TELEGRAM_ADMIN_BOT_USERNAME || 'KhataFlowAdminBot';
+    let telegramSetupError: string | null = null;
+
+    try {
+      await ensureTelegramTransportReady();
+    } catch (error: any) {
+      telegramSetupError = error.message || 'Failed to initialize Telegram admin bot transport';
+    }
+
     const telegramLink = `https://t.me/${botUsername}?start=admin_${businessId}`;
     
     const qrDataUrl = await QRCode.toDataURL(telegramLink, { 
@@ -93,7 +111,9 @@ router.get('/admin/link', async (req: Request, res: Response) => {
       businessName: business.name,
       botUsername,
       linked: Boolean(business.telegram_admin_id),
-      linkedUsername: business.telegram_admin_username || null
+      linkedUsername: business.telegram_admin_username || null,
+      telegram: getTelegramTransportStatus(),
+      telegramSetupError
     });
   } catch (error: any) {
     res.status(500).json({ success: false, error: error.message });
