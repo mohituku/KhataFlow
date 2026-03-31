@@ -136,6 +136,19 @@ function extractCommandArgument(text: string | undefined) {
 }
 
 async function linkAdminAccount(businessId: string, telegramId: string, username: string) {
+  const { error: clearError } = await supabase
+    .from('businesses')
+    .update({
+      telegram_admin_id: null,
+      telegram_admin_username: null
+    })
+    .eq('telegram_admin_id', telegramId)
+    .neq('id', businessId);
+
+  if (clearError) {
+    throw clearError;
+  }
+
   const { data, error } = await supabase
     .from('businesses')
     .update({
@@ -164,6 +177,20 @@ async function linkClientAccount(clientId: string, telegramId: string, username:
     throw clientError || new Error('Client not found');
   }
 
+  const { error: clearError } = await supabase
+    .from('clients')
+    .update({
+      telegram_id: null,
+      telegram_username: null,
+      telegram_linked_at: null
+    })
+    .eq('telegram_id', telegramId)
+    .neq('id', client.id);
+
+  if (clearError) {
+    throw clearError;
+  }
+
   const { data: linkedClient, error: updateError } = await supabase
     .from('clients')
     .update({
@@ -180,6 +207,22 @@ async function linkClientAccount(clientId: string, telegramId: string, username:
   }
 
   return linkedClient;
+}
+
+async function getBusinessByAdminTelegramId(telegramId: string) {
+  const { data, error } = await supabase
+    .from('businesses')
+    .select('id, name, telegram_admin_id, updated_at')
+    .eq('telegram_admin_id', telegramId)
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('Lookup business by Telegram admin ID error:', error);
+    return null;
+  }
+
+  return data?.[0] || null;
 }
 
 async function replyAdminLinked(ctx: any, businessName: string) {
@@ -242,11 +285,7 @@ adminBot.start(async (ctx: any) => {
   }
 
   // Check if already linked
-  const { data: business } = await supabase
-    .from('businesses')
-    .select('id, name')
-    .eq('telegram_admin_id', telegramId)
-    .maybeSingle();
+  const business = await getBusinessByAdminTelegramId(telegramId);
 
   if (!business) {
     const publicFrontendUrl = getPublicFrontendUrl();
@@ -324,11 +363,7 @@ adminBot.on(message('text'), async (ctx: any) => {
   }
 
   // Resolve business from telegram admin ID
-  const { data: business } = await supabase
-    .from('businesses')
-    .select('id')
-    .eq('telegram_admin_id', telegramId)
-    .maybeSingle();
+  const business = await getBusinessByAdminTelegramId(telegramId);
 
   if (!business) {
     await ctx.reply('❌ Not linked to a business. Open KhataFlow dashboard first.');
@@ -873,12 +908,20 @@ clientBot.action('PAY_FLOW', async (ctx: any) => {
 // ============================================
 
 async function getClientByTelegramId(telegramId: string) {
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('clients')
     .select('*')
     .eq('telegram_id', telegramId)
-    .maybeSingle();
-  return data;
+    .order('telegram_linked_at', { ascending: false, nullsFirst: false })
+    .order('updated_at', { ascending: false })
+    .limit(1);
+
+  if (error) {
+    console.error('Lookup client by Telegram ID error:', error);
+    return null;
+  }
+
+  return data?.[0] || null;
 }
 
 async function getClientById(clientId: string) {
